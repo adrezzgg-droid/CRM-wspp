@@ -325,3 +325,60 @@ export const orderListQuery = z.object({
   cursor: id.optional(),
 });
 export type OrderListQuery = z.infer<typeof orderListQuery>;
+
+// ─────────────────────────────── Tareas ─────────────────────────────────────
+
+export const TASK_TYPES = ["llamada", "whatsapp", "visita", "seguimiento", "cotizacion", "postventa"] as const;
+export const TASK_PRIORITIES = ["baja", "normal", "alta"] as const;
+const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida");
+const hm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Hora inválida");
+
+const taskFields = z.object({
+  type: z.enum(TASK_TYPES),
+  priority: z.enum(TASK_PRIORITIES),
+  /** Fecha y hora en la zona horaria de la empresa. */
+  dueDate: ymd,
+  dueTime: hm,
+  description: optionalText(1000, "Descripción"),
+  assigneeId: id,
+  customerId: id.nullable(),
+});
+
+export const taskInput = taskFields.extend({
+  priority: taskFields.shape.priority.default("normal"),
+  dueTime: taskFields.shape.dueTime.default("09:00"),
+  assigneeId: id.optional(),
+  customerId: id.optional(),
+  conversationId: id.optional(),
+  opportunityId: id.optional(),
+});
+
+export const taskUpdate = taskFields.partial();
+
+export const taskStatusInput = z.object({
+  status: z.enum(["pendiente", "completada", "cancelada"]),
+  /** Resultado: qué se habló o acordó (al completar). */
+  outcome: optionalText(1000, "Resultado"),
+});
+
+export const taskListQuery = z.object({
+  vista: z.enum(["hoy", "vencidas", "proximas", "completadas"]).default("hoy"),
+  responsable: id.optional(),
+});
+
+// ─────────────────────────── Notificaciones ─────────────────────────────────
+
+export const NOTIFICATION_TYPES = [
+  "nuevo_lead",
+  "nuevo_mensaje",
+  "lead_sin_responder",
+  "tarea_vencida",
+  "cliente_esperando",
+  "nueva_asignacion",
+  "pedido_generado",
+  "cliente_reactivar",
+] as const;
+
+export const notificationPrefsInput = z.object({
+  prefs: z.partialRecord(z.enum(NOTIFICATION_TYPES), z.boolean()),
+});

@@ -15,7 +15,7 @@
     "org:crear": "node --env-file-if-exists=.env.local scripts/crear-organizacion.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "test:api": "node --env-file-if-exists=.env.local --test tests/api/api.test.ts",
-    "test:emulador": "firebase emulators:exec --only firestore --project demo-crm-whatsapp \"node --test tests/rules/firestore-rules.test.ts tests/inbox/ingest.test.ts\""
+    "test:emulador": "firebase emulators:exec --only firestore --project demo-crm-whatsapp \"node --test tests/rules/firestore-rules.test.ts tests/inbox/ingest.test.ts tests/inbox/tasks-overdue.test.ts\""
   },
   "dependencies": {
     "firebase": "^12.19.0",

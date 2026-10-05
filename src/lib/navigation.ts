@@ -61,7 +61,7 @@ export const CONFIG_SECTIONS: readonly ConfigSection[] = [
   { slug: "plantillas", label: "Plantillas", description: "Plantillas de mensajes de WhatsApp.", resource: "plantillas", phase: 7 },
   { slug: "etiquetas", label: "Etiquetas", description: "Etiquetas con nombre y color para clientes y conversaciones.", resource: "etiquetas", phase: 3 },
   { slug: "automatizaciones", label: "Automatizaciones", description: "Reglas automáticas.", resource: "automatizaciones", phase: 7 },
-  { slug: "notificaciones", label: "Notificaciones", description: "Qué avisos querés recibir.", resource: null, phase: 6 },
+  { slug: "notificaciones", label: "Notificaciones", description: "Qué avisos querés recibir (preferencia personal).", resource: null, phase: 6 },
   { slug: "integraciones", label: "Integraciones", description: "Conectores con otros sistemas.", resource: "integraciones", phase: 9 },
 ];
 

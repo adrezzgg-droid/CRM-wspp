@@ -412,18 +412,49 @@ export interface Product extends Audited, TenantScoped {
 
 // ───────────────────────── Tareas, notas, actividad ────────────────────────
 
+export type TaskType = "llamada" | "whatsapp" | "visita" | "seguimiento" | "cotizacion" | "postventa";
+export type TaskStatus = "pendiente" | "completada" | "cancelada";
+
 export interface Task extends Audited, TenantScoped {
   id: Id;
   customerId?: Id;
+  /** Nombre del cliente, copiado para las listas. */
+  customerName?: string;
   conversationId?: Id;
+  opportunityId?: Id;
   assigneeId: Id;
-  type: "llamada" | "whatsapp" | "visita" | "seguimiento" | "cotizacion" | "postventa";
+  type: TaskType;
   priority: "baja" | "normal" | "alta";
-  status: "pendiente" | "completada" | "cancelada";
+  status: TaskStatus;
   dueAt: Timestamp;
   description?: string;
+  /** Resultado al completarla (qué se habló, qué se acordó). */
+  outcome?: string;
   completedAt?: Timestamp;
+  cancelledAt?: Timestamp;
+  /** Ya se avisó que está vencida (una sola vez). */
+  overdueNotifiedAt?: Timestamp;
 }
+
+export const TASK_TYPE_LABELS: Record<TaskType, string> = {
+  llamada: "Llamada",
+  whatsapp: "WhatsApp",
+  visita: "Visita",
+  seguimiento: "Seguimiento",
+  cotizacion: "Cotización",
+  postventa: "Postventa",
+};
+
+export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  nuevo_lead: "Nuevo lead",
+  nuevo_mensaje: "Nuevo mensaje de un cliente",
+  lead_sin_responder: "Lead sin responder a tiempo",
+  tarea_vencida: "Tarea vencida",
+  cliente_esperando: "Cliente esperando respuesta",
+  nueva_asignacion: "Nueva asignación (conversación o entrega)",
+  pedido_generado: "Pedido entregado",
+  cliente_reactivar: "Cliente para reactivar",
+};
 
 export interface Note extends Audited, TenantScoped {
   id: Id;

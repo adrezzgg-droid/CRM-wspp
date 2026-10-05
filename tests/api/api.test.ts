@@ -521,6 +521,82 @@ describe("productos, pipeline y pedidos", () => {
   });
 });
 
+describe("tareas y Mi día", () => {
+  let ownCustomer = "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  // Fechas en la zona de la empresa demo (UTC-3).
+  const dayIn = (offset: number) => {
+    const d = new Date(Date.now() - 3 * 3_600_000 + offset * 86_400_000);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  };
+  type TaskRow = { id: string; status: string; assigneeId: string; outcome?: string };
+  const tasksOf = async (who: Who, vista: string) => (await call(who, "GET", `/api/tasks?vista=${vista}`)).data as unknown as { items: TaskRow[]; counts: Record<string, number> };
+
+  before(async () => {
+    ownCustomer = (await call("vendedor1", "GET", "/api/customers")).data.items[0].id;
+  });
+
+  test("el vendedor crea tareas para sí; no puede asignar a otro", async () => {
+    assert.equal((await call("vendedor1", "POST", "/api/tasks", { type: "llamada", dueDate: dayIn(0), assigneeId: uids.vendedor2 })).status, 403);
+    const r = await call("vendedor1", "POST", "/api/tasks", { type: "llamada", dueDate: dayIn(0), dueTime: "23:58", customerId: ownCustomer, description: "Prueba hoy" });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const t = (r.data as unknown as { task: TaskRow }).task;
+    assert.equal(t.assigneeId, uids.vendedor1);
+    const hoy = await tasksOf("vendedor1", "hoy");
+    assert.ok(hoy.items.some((x) => x.id === t.id));
+    assert.equal(hoy.counts.hoy, hoy.items.length);
+    assert.equal((await call("vendedor2", "GET", `/api/tasks/${t.id}`)).status, 404);
+  });
+
+  test("vistas: vencidas y próximas según la fecha de la empresa", async () => {
+    const old = (await call("vendedor1", "POST", "/api/tasks", { type: "visita", dueDate: dayIn(-3) })).data as unknown as { task: TaskRow };
+    const next = (await call("vendedor1", "POST", "/api/tasks", { type: "seguimiento", dueDate: dayIn(3) })).data as unknown as { task: TaskRow };
+    assert.ok((await tasksOf("vendedor1", "vencidas")).items.some((x) => x.id === old.task.id));
+    assert.ok((await tasksOf("vendedor1", "proximas")).items.some((x) => x.id === next.task.id));
+    // Reprogramar mueve de vista.
+    assert.equal((await call("vendedor1", "PATCH", `/api/tasks/${old.task.id}`, { dueDate: dayIn(4) })).status, 200);
+    assert.ok((await tasksOf("vendedor1", "proximas")).items.some((x) => x.id === old.task.id));
+  });
+
+  test("completar con resultado lo deja en el historial del cliente; se puede reabrir", async () => {
+    const t = ((await call("vendedor1", "POST", "/api/tasks", { type: "llamada", dueDate: dayIn(0), customerId: ownCustomer })).data as unknown as { task: TaskRow }).task;
+    const done = await call("vendedor1", "POST", `/api/tasks/${t.id}/status`, { status: "completada", outcome: "Pidió lista nueva" });
+    assert.equal(done.status, 200);
+    assert.ok((await tasksOf("vendedor1", "completadas")).items.some((x) => x.id === t.id && x.outcome === "Pidió lista nueva"));
+    assert.equal((await call("vendedor1", "PATCH", `/api/tasks/${t.id}`, { description: "x" })).status, 409, "una completada no se edita");
+    assert.equal((await call("vendedor1", "POST", `/api/tasks/${t.id}/status`, { status: "pendiente" })).status, 200);
+  });
+
+  test("el supervisor asigna tareas a su equipo; el repartidor no crea", async () => {
+    const r = await call("supervisor", "POST", "/api/tasks", { type: "visita", dueDate: dayIn(1), assigneeId: uids.vendedor1, description: "Visitar con el supervisor" });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const id = (r.data as unknown as { task: TaskRow }).task.id;
+    assert.equal((await call("vendedor1", "GET", `/api/tasks/${id}`)).status, 200);
+    assert.equal((await call("supervisor", "POST", "/api/tasks", { type: "visita", dueDate: dayIn(1), assigneeId: uids.lectura })).status, 422);
+    assert.equal((await call("repartidor", "POST", "/api/tasks", { type: "visita", dueDate: dayIn(1) })).status, 403);
+    assert.equal((await call("lectura", "POST", "/api/tasks", { type: "visita", dueDate: dayIn(1) })).status, 403);
+  });
+
+  test("validación de fecha y hora", async () => {
+    assert.equal((await call("vendedor1", "POST", "/api/tasks", { type: "llamada", dueDate: "05/10/2026" })).status, 422);
+    assert.equal((await call("vendedor1", "POST", "/api/tasks", { type: "llamada", dueDate: dayIn(0), dueTime: "25:00" })).status, 422);
+  });
+
+  test("preferencias de notificación personales", async () => {
+    assert.equal((await call("vendedor1", "PUT", "/api/me/notifications", { prefs: { tarea_vencida: false } })).status, 200);
+    assert.equal((await call("vendedor1", "PUT", "/api/me/notifications", { prefs: { inventada: true } })).status, 422);
+    assert.equal((await call("vendedor1", "PUT", "/api/me/notifications", { prefs: { tarea_vencida: true } })).status, 200);
+  });
+
+  test("Mi día responde para cada rol", async () => {
+    for (const who of ["vendedor1", "repartidor", "supervisor"] as Who[]) {
+      const res = await fetch(`${BASE}/mi-dia`, { headers: { Cookie: cookies[who] } });
+      assert.equal(res.status, 200, who);
+      assert.match(await res.text(), /Buen|Buenas/);
+    }
+  });
+});
+
 describe("seguridad de la API", () => {
   test("sin Origin o con otro origen, las escrituras se rechazan (CSRF)", async () => {
     assert.equal((await call("admin", "POST", "/api/customers", { name: "CSRF" }, null)).status, 403);

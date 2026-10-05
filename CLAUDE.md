@@ -41,12 +41,13 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - Asignación: la decide `ingestInbound` en la misma transacción (responsable activo → dueño del cliente → reglas de `settings/assignment`: zona y turno rotativo por `member.lastAutoAssignedAt`). La lógica pura está en `src/lib/assignment.ts`. El lead nunca retrocede por eventos automáticos (`advanceLead`) y guarda la fecha de cada paso en `statusAt`.
 - Demoras: `awaitingSince` = primer mensaje sin respuesta; `runSlaCheck` (`src/server/inbox/sla-core.ts`) avisa una vez por espera. Lo dispara `/api/cron/sla` (Bearer CRON_SECRET, cada 5 min en `vercel.json`) o el botón de Configuración → Asignación.
 - Pipeline/pedidos (`src/server/commercial/`): los efectos sobre lead y cliente van por `readCommercialEffects` (lee todo antes de escribir, como exigen las transacciones). Pedido: número correlativo en `settings/counters` (transacción), transiciones por actor en `src/lib/orders.ts`, `counted` evita sumar dos veces a las estadísticas del cliente; al confirmar se encola en `outbox` solo para conectores habilitados en `settings/integrations`. El repartidor ve un pedido solo si `driverId` es él.
+- Tareas: fecha/hora siempre en la zona horaria de la empresa (`zonedTimeToMs`/`dayBounds` en `src/lib/tasks.ts`); el cliente manda `dueDate` + `dueTime`, nunca un timestamp del navegador. Vencidas: `runOverdueTasks` (`src/server/tasks/overdue-core.ts`) en el mismo cron que las demoras. "Mi día" (`src/server/my-day.ts`) es siempre personal aunque el rol vea más. En Server Components no usar `Date.now()` (lint de pureza): calcularlo en el módulo de servidor.
 - Bandeja en tiempo real desde el navegador: las consultas salen de `inboxQuery()` (`src/lib/inbox-filters.ts`) y el vendedor SIEMPRE filtra `assigneeId == uid` (las reglas no son filtros).
 
 ## Comandos
 
 - `npm run emulators` — Auth + Firestore + Storage locales (proyecto `demo-crm-whatsapp`, no requiere cuenta).
-- `npm run seed:demo` — reinicia la organización demo: un usuario por rol, 12 clientes, conversaciones, catálogo y oportunidades de ejemplo (entran por la ingestión real). Contraseña en `scripts/seed-demo.ts`, solo emulador.
+- `npm run seed:demo` — reinicia la organización demo: un usuario por rol, 12 clientes, conversaciones, catálogo, oportunidades y tareas de ejemplo (entran por la ingestión real). Contraseña en `scripts/seed-demo.ts`, solo emulador.
 - `npm run org:crear -- --nombre "..." --admin-email ... --admin-nombre "..."` — organización real.
 - `npm run dev` · `npm run check` (typecheck + lint + test + build).
 - `npm run test:emulador` (alias `test:rules`) — reglas + ingestión contra el emulador (con los emuladores de desarrollo APAGADOS: usa los mismos puertos).
@@ -72,12 +73,17 @@ asignación manual a persona y/o equipo, disponibilidad de cada vendedor, ABM de
 reglas configurables, alerta de demora (cron + manual) con indicador en la bandeja, recorrido del lead con
 fechas (bandeja y ficha) y conversión prospecto → cliente nuevo al registrar la venta.
 
-Fase 5 cerrada (pendiente de confirmación del dueño para pasar a la Fase 6):
+Fase 5 cerrada:
 pipeline Kanban (arrastrar y soltar + "Mover a…", totales y ponderado, estancadas, perdida con motivo, efectos
 sobre el lead y conversión del prospecto), catálogo de productos, pedidos (alta desde lista/ficha/bandeja,
 numeración correlativa, borrador/confirmado/preparación/reparto/entregado/cancelado por rol, repartidor,
 estadísticas del cliente, cola del conector), "Mis entregas" del repartidor.
-Pruebas: 85 unitarias, 46 de emulador, 38 de API.
+
+Fase 6 cerrada (pendiente de confirmación del dueño para pasar a la Fase 7):
+tareas (6 tipos, vistas Hoy/Vencidas/Próximas/Completadas con contadores, completar con resultado que queda en
+el historial, reprogramar, asignar dentro del equipo, crear desde lista/ficha/bandeja), avisos de tareas vencidas
+(cron), "Mi día" por rol, historial de llamadas/visitas en la ficha, preferencias personales de notificación.
+Pruebas: 90 unitarias, 48 de emulador, 45 de API.
 
 Cambios sobre lo heredado: `Order.driverId`; marca de lectura de notificaciones exige booleano; el supervisor
 tiene `asignar` sobre clientes (equipo); notas, contactos y actividades ya no son legibles por el vendedor desde

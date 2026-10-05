@@ -1,7 +1,7 @@
 import "server-only";
 import { FieldValue, type WriteBatch } from "firebase-admin/firestore";
 import type { z } from "zod";
-import type { Member, Team } from "@/types/model";
+import type { Member, NotificationType, Team } from "@/types/model";
 import { orgPath } from "@/types/model";
 import { adminAuth, adminDb } from "@/server/firebase/admin";
 import { ApiError } from "@/server/api/handler";
@@ -344,4 +344,12 @@ export async function setOwnAvailability(session: Session, available: boolean) {
     after: { available },
   }, now);
   await batch.commit();
+}
+
+/** Cada usuario elige qué avisos recibe. */
+export async function setOwnNotificationPrefs(session: Session, prefs: Partial<Record<NotificationType, boolean>>) {
+  const now = Date.now();
+  const update: Record<string, unknown> = { updatedAt: now, updatedBy: session.uid };
+  for (const [k, v] of Object.entries(prefs)) update[`notificationPrefs.${k}`] = v;
+  await col(session.orgId, "members").doc(session.uid).update(update);
 }

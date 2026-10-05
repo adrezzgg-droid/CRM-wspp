@@ -13,6 +13,7 @@ import { customerKeywords } from "../src/lib/search.ts";
 import { toWhatsappId } from "../src/lib/phone.ts";
 import { buildInboundPayload, messagePreview, parseWebhook, type MetaMessage } from "../src/lib/whatsapp/webhook.ts";
 import { ingestInbound } from "../src/server/inbox/ingest-core.ts";
+import { msToZoned, zonedTimeToMs } from "../src/lib/tasks.ts";
 import { createOrganizationDocs, ensureUser, initAdmin, isEmulator, parseArgs, upsertMember } from "./lib/provision.ts";
 
 const ORG_ID = "demo";
@@ -100,7 +101,7 @@ const CUSTOMERS: [string, string, string, string, string, string, string | null,
 async function seedCustomers(db: Firestore, uids: Record<string, string>) {
   const col = db.collection(`organizations/${ORG_ID}/customers`);
   // Reinicio: se borran los datos comerciales demo anteriores (solo en la org demo).
-  for (const name of ["customers", "activities", "notes", "contacts", "conversations", "leads", "assignments", "opportunities", "orders", "products", "outbox"]) {
+  for (const name of ["customers", "activities", "notes", "contacts", "conversations", "leads", "assignments", "opportunities", "orders", "products", "outbox", "tasks"]) {
     const old = await db.collection(`organizations/${ORG_ID}/${name}`).get();
     if (name === "conversations") {
       for (const c of old.docs) {
@@ -284,6 +285,39 @@ async function seedCatalogAndPipeline(db: Firestore, uids: Record<string, string
   await batch.commit();
 }
 
+/** Tareas de ejemplo: vencidas, de hoy y próximas, en la zona horaria de la empresa. */
+async function seedTasks(db: Firestore, uids: Record<string, string>) {
+  const tz = "America/Argentina/Cordoba";
+  const now = Date.now();
+  const day = (offset: number) => msToZoned(now + offset * 86_400_000, tz).date;
+  const base = { orgId: ORG_ID, isDemo: true, status: "pendiente", createdAt: now, createdBy: "system", updatedAt: now, updatedBy: "system" };
+  const TASKS: [string, string, string | null, string | null, number, string, string, string][] = [
+    // responsable, tipo, cliente, nombre, día (0 = hoy), hora, prioridad, descripción
+    ["vendedor1", "llamada", "demo-cliente-4", "Marta López", -2, "10:00", "alta", "Llamar para reactivar: hace un mes que no compra"],
+    ["vendedor1", "visita", "demo-cliente-3", "Ricardo Sosa", 0, "11:30", "normal", "Llevar muestras de milanesas"],
+    ["vendedor1", "whatsapp", "demo-cliente-2", "Laura Medina", 0, "17:00", "normal", "Mandar la lista de precios nueva"],
+    ["vendedor1", "cotizacion", "demo-cliente-1", "José Fernández", 2, "09:00", "normal", "Cotizar volumen mensual"],
+    ["vendedor2", "seguimiento", "demo-cliente-6", "Carolina Vega", -1, "15:00", "normal", "Confirmar si recibió la cotización"],
+    ["vendedor2", "postventa", "demo-cliente-7", "Pablo Giménez", 0, "12:00", "baja", "Preguntar cómo llegó el último pedido"],
+    ["repartidor", "visita", null, null, 0, "08:00", "normal", "Cargar el camión de la tarde"],
+  ];
+  const batch = db.batch();
+  for (const [who, type, customerId, customerName, offset, time, priority, description] of TASKS) {
+    const ref = db.collection(`organizations/${ORG_ID}/tasks`).doc();
+    batch.set(ref, {
+      ...base,
+      id: ref.id,
+      assigneeId: uids[who],
+      type,
+      priority,
+      description,
+      ...(customerId ? { customerId, customerName } : {}),
+      dueAt: zonedTimeToMs(day(offset), time, tz),
+    });
+  }
+  await batch.commit();
+}
+
 const { auth, db } = initAdmin();
 console.log(`Destino: ${isEmulator() ? "EMULADOR" : `proyecto ${process.env.FIREBASE_PROJECT_ID}`}`);
 
@@ -319,6 +353,7 @@ await seedNotifications(db, uids);
 await seedCustomers(db, uids);
 await seedConversations(db, uids);
 await seedCatalogAndPipeline(db, uids);
+await seedTasks(db, uids);
 
 console.log(`Demo listo: "${ORG_NAME}" (${ORG_ID})`);
 for (const u of USERS) console.log(`  ${u.role.padEnd(13)} ${u.email}`);

@@ -3,10 +3,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { adminDb } from "@/server/firebase/admin";
 import { serverEnv } from "@/server/env";
 import { runSlaCheckAll } from "@/server/inbox/sla-core";
+import { runOverdueTasksAll } from "@/server/tasks/overdue-core";
 
 /**
- * Tarea programada: alertas de conversaciones sin respuesta en todas las
- * empresas. La llama el cron (Vercel Cron, Cloud Scheduler, etc.) con
+ * Tarea programada: alertas de conversaciones sin respuesta y de tareas
+ * vencidas en todas las empresas. La llama el cron (Vercel Cron, Cloud Scheduler, etc.) con
  * `Authorization: Bearer CRON_SECRET`.
  */
 function authorized(req: NextRequest): boolean {
@@ -20,6 +21,12 @@ function authorized(req: NextRequest): boolean {
 
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  const results = await runSlaCheckAll(adminDb());
-  return NextResponse.json({ ok: true, alerted: results.reduce((n, r) => n + r.alerted, 0), results });
+  const [sla, tasks] = await Promise.all([runSlaCheckAll(adminDb()), runOverdueTasksAll(adminDb())]);
+  return NextResponse.json({
+    ok: true,
+    alerted: sla.reduce((n, r) => n + r.alerted, 0),
+    overdueTasks: tasks.reduce((n, r) => n + r.notified, 0),
+    sla,
+    tasks,
+  });
 }

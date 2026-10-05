@@ -20,6 +20,10 @@ import { listProducts } from "@/server/commercial/products";
 import { scopeAllows } from "@/server/permissions/scope";
 import { getMembers, OWNER_ROLES, scopeContext } from "@/server/org/data";
 import { OrderStatusBadge } from "@/components/ui/order-badge";
+import { taskFormOptions } from "@/server/tasks/options";
+import { TaskList } from "@/components/tasks/task-list";
+import { NewTaskButton } from "@/components/tasks/task-form";
+import { TASK_TYPE_LABELS } from "@/types/model";
 
 export const metadata: Metadata = { title: "Cliente" };
 
@@ -57,7 +61,7 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
     getZones(session.orgId),
     getTeams(session.orgId),
   ]);
-  const { customer: c, contacts, notes, activities, conversations, orders, tasks, opportunities, leads } = data;
+  const { customer: c, contacts, notes, activities, conversations, orders, tasks, opportunities, leads, doneTasks } = data;
   const tz = session.org.timezone;
   const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: session.org.currency, maximumFractionDigits: 0 });
   const date = new Intl.DateTimeFormat("es-AR", { dateStyle: "medium", timeZone: tz });
@@ -81,6 +85,8 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
     getMembers(session.orgId),
   ]);
   const stageName = new Map(pipeline.stages.map((s) => [s.id, s]));
+  const canTasks = can(session.role, "tareas", "crear", session.overrides);
+  const taskOptions = canTasks || can(session.role, "tareas", "editar", session.overrides) ? await taskFormOptions(session) : null;
   const nextOpportunity = opportunities.find((o) => o.nextAction);
 
   const facts: [string, React.ReactNode][] = [
@@ -136,6 +142,7 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {!c.archived && canTasks && taskOptions && <NewTaskButton variant="secondary" label="Tarea" options={taskOptions} customer={{ id: c.id, name: c.name }} />}
           {!c.archived && (
             <CommercialActions
               customer={{ id: c.id, name: c.name, company: c.company, address: c.address }}
@@ -177,14 +184,14 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
               <p className="flex items-start gap-2 text-sm">
                 <CalendarClock className="mt-0.5 size-4 shrink-0 text-brand-600" aria-hidden />
                 <span>
-                  <span className="font-medium">{dateTime.format(nextTask.dueAt)}</span> · {nextTask.type}
+                  <span className="font-medium">{dateTime.format(nextTask.dueAt)}</span> · {TASK_TYPE_LABELS[nextTask.type]}
                   {nextTask.description ? ` — ${nextTask.description}` : ""}
                 </span>
               </p>
             ) : nextOpportunity ? (
               <p className="text-sm">{nextOpportunity.nextAction}</p>
             ) : (
-              <Empty>No hay acciones pendientes. Las tareas de seguimiento llegan en la Fase 6.</Empty>
+              <Empty>No hay acciones pendientes. Programá una tarea de seguimiento.</Empty>
             )}
           </Section>
 
@@ -286,14 +293,31 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
           </Section>
 
           <Section title="Tareas pendientes">
-            {tasks.length === 0 ? (
-              <Empty>Sin tareas pendientes.</Empty>
+            <TaskList
+              tasks={tasks}
+              timezone={tz}
+              canEdit={can(session.role, "tareas", "editar", session.overrides)}
+              options={taskOptions}
+              uid={session.uid}
+              names={Object.fromEntries([...members.values()].map((m) => [m.id, m.displayName]))}
+              empty="Sin tareas pendientes."
+            />
+          </Section>
+
+          <Section title="Llamadas, visitas y seguimientos">
+            {doneTasks.length === 0 ? (
+              <Empty>Sin gestiones registradas.</Empty>
             ) : (
-              <ul className="space-y-1.5 text-sm">
-                {tasks.map((t) => (
+              <ul className="space-y-2 text-sm">
+                {doneTasks.map((t) => (
                   <li key={t.id}>
-                    <span className="font-medium">{dateTime.format(t.dueAt)}</span> · {t.type}
-                    {t.description ? ` — ${t.description}` : ""}
+                    <p>
+                      <span className="font-medium">{TASK_TYPE_LABELS[t.type]}</span>{" "}
+                      <span className="text-xs text-ink-muted">
+                        {t.completedAt ? dateTime.format(t.completedAt) : ""} · {lookups.members.get(t.assigneeId) ?? "—"}
+                      </span>
+                    </p>
+                    {t.outcome && <p className="text-xs text-ink-muted">{t.outcome}</p>}
                   </li>
                 ))}
               </ul>

@@ -13,6 +13,8 @@ import { RolesEditor } from "../sections/roles-editor";
 import { TeamsManager } from "../sections/teams-manager";
 import { GeneralForm, OrganizationForm } from "../sections/settings-forms";
 import { TagsManager } from "../sections/tags-manager";
+import { NotificationPrefsForm } from "../sections/notification-prefs";
+import type { Member, NotificationType } from "@/types/model";
 import { ZonesManager } from "../sections/zones-manager";
 import { AssignmentForm } from "../sections/assignment-form";
 import { getAssignmentSettings } from "@/server/org/assignment";
@@ -23,7 +25,6 @@ const PENDING_ITEMS: Record<string, string[]> = {
   whatsapp: ["Número conectado, Phone Number ID y WABA ID", "Access Token cifrado en el servidor", "URL y Verify Token del webhook", "Estado de conexión y prueba"],
   plantillas: ["Plantillas con variables {{nombre}}, {{pedido}}…", "Categorías de Meta", "Estado de aprobación en Meta"],
   automatizaciones: ["Disparadores: nuevo WhatsApp, sin respuesta, pedido, sin compra", "Acciones: asignar, etiquetar, mensaje, tarea", "Historial de ejecuciones"],
-  notificaciones: ["Elegir qué avisos recibir", "Nuevo lead, mensaje, tarea vencida, asignación…"],
   integraciones: ["Sistema de gestión de la distribuidora", "Cola de envíos con reintentos", "Google Sheets, Mercado Pago, ERP (futuro)"],
 };
 
@@ -136,6 +137,18 @@ async function SectionBody({ slug, phase, session }: { slug: string; phase: numb
           sellers={{ total: sellers.length, available: sellers.filter((m) => m.available).length }}
         />
       );
+    }
+    case "notificaciones": {
+      const me = (await adminDb().collection(orgPath(session.orgId, "members")).doc(session.uid).get()).data() as Member;
+      // Cada rol ve solo los avisos que le pueden llegar.
+      const types: NotificationType[] =
+        session.role === "repartidor"
+          ? ["nueva_asignacion", "tarea_vencida"]
+          : session.role === "solo_lectura"
+            ? []
+            : ["nuevo_lead", "nuevo_mensaje", "cliente_esperando", "lead_sin_responder", "nueva_asignacion", "tarea_vencida", "pedido_generado", "cliente_reactivar"];
+      if (!types.length) return <p className="text-sm text-ink-muted">Tu rol no recibe avisos.</p>;
+      return <NotificationPrefsForm types={types} initial={me.notificationPrefs ?? {}} />;
     }
     case "etiquetas": {
       const tags = (await getTags(session.orgId)).sort((a, b) => a.name.localeCompare(b.name, "es"));

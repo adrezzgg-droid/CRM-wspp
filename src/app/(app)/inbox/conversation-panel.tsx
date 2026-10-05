@@ -18,6 +18,7 @@ import { StageBadge, TagChip } from "@/components/ui/badges";
 import { CustomerFormModal } from "../clientes/customer-form";
 import { OpportunityFormModal } from "@/components/commercial/opportunity-form";
 import { NewOrderButton } from "../pedidos/order-actions";
+import { NewTaskButton } from "@/components/tasks/task-form";
 import type { InboxProps } from "./types";
 
 type CustomerState = { status: "loading" } | { status: "ok"; customer: Customer } | { status: "hidden" } | { status: "error"; message: string };
@@ -284,9 +285,16 @@ export function ConversationPanel({
           ) : (
             <p className="text-xs text-ink-muted">Para crear oportunidades o pedidos, el cliente tiene que estar a tu cargo.</p>
           )}
-          <Button variant="ghost" disabled className="w-full justify-start" title="Se habilita en la Fase 6">
-            Crear tarea · Fase 6
-          </Button>
+          {props.taskOptions && (
+            <NewTaskButton
+              variant="secondary"
+              label="Crear tarea"
+              className="w-full justify-start"
+              options={props.taskOptions}
+              customer={customer.status === "ok" ? { id: customer.customer.id, name: customer.customer.name } : undefined}
+              context={{ conversationId: c.id }}
+            />
+          )}
         </section>
       </div>
     </div>

@@ -12,6 +12,7 @@ import type { Session } from "@/server/auth/session";
 import { DEFAULT_ASSIGNMENT_SETTINGS } from "@/lib/assignment";
 import type { assignmentSettingsInput, zoneInput } from "@/lib/schemas";
 import { runSlaCheck, type SlaResult } from "@/server/inbox/sla-core";
+import { runOverdueTasks } from "@/server/tasks/overdue-core";
 import { getMembers, getZones, OWNER_ROLES } from "./data";
 
 const col = (orgId: string, c: Parameters<typeof orgPath>[1]) => adminDb().collection(orgPath(orgId, c));
@@ -43,10 +44,11 @@ export async function saveAssignmentSettings(session: Session, input: z.output<t
   await batch.commit();
 }
 
-/** Revisión de demoras a pedido (además de la tarea programada). */
-export async function runSlaNow(session: Session): Promise<SlaResult> {
+/** Revisión a pedido de demoras y tareas vencidas (lo mismo que la tarea programada). */
+export async function runSlaNow(session: Session): Promise<SlaResult & { overdueTasks: number }> {
   if (!can(session.role, "inbox", "asignar", session.overrides)) throw new ApiError(403, "No tenés permiso para esta acción");
-  return runSlaCheck(adminDb(), session.orgId);
+  const [sla, tasks] = await Promise.all([runSlaCheck(adminDb(), session.orgId), runOverdueTasks(adminDb(), session.orgId)]);
+  return { ...sla, overdueTasks: tasks.notified };
 }
 
 // ───────────────────────────── Zonas ────────────────────────────────────────

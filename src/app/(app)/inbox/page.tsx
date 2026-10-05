@@ -7,6 +7,7 @@ import { getAssignmentSettings } from "@/server/org/assignment";
 import { customerFormOptions } from "@/server/customers/options";
 import { getPipeline } from "@/server/commercial/common";
 import { listProducts } from "@/server/commercial/products";
+import { taskFormOptions } from "@/server/tasks/options";
 import { InboxApp } from "./inbox-app";
 
 export const metadata: Metadata = { title: "Bandeja" };
@@ -57,6 +58,7 @@ export default async function InboxPage() {
       customerOptions={canEditCustomer ? await customerFormOptions(session) : null}
       canEditCustomer={canEditCustomer}
       currency={session.org.currency}
+      taskOptions={can(session.role, "tareas", "crear", session.overrides) ? await taskFormOptions(session) : null}
       opportunityOptions={
         pipeline && pipelineCtx
           ? {
