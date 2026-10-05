@@ -4,7 +4,7 @@ import { requireSession } from "@/server/auth/guards";
 import { adminDb } from "@/server/firebase/admin";
 import { can } from "@/server/permissions/matrix";
 import type { Session } from "@/server/auth/session";
-import { getGeneralSettings, getMembers, getTeams, getZones, scopeContext } from "@/server/org/data";
+import { getGeneralSettings, getMembers, getTags, getTeams, getZones, scopeContext } from "@/server/org/data";
 import { CONFIG_SECTIONS, canSee } from "@/lib/navigation";
 import { COLLECTIONS, type Organization } from "@/types/model";
 import { ModulePending } from "@/components/ui/page";
@@ -12,12 +12,12 @@ import { UsersManager } from "../sections/users-manager";
 import { RolesEditor } from "../sections/roles-editor";
 import { TeamsManager } from "../sections/teams-manager";
 import { GeneralForm, OrganizationForm } from "../sections/settings-forms";
+import { TagsManager } from "../sections/tags-manager";
 
 const PENDING_ITEMS: Record<string, string[]> = {
   zonas: ["Zonas y localidades", "Vendedor responsable por zona", "Asignación automática por zona"],
   whatsapp: ["Número conectado, Phone Number ID y WABA ID", "Access Token cifrado en el servidor", "URL y Verify Token del webhook", "Estado de conexión y prueba"],
   plantillas: ["Plantillas con variables {{nombre}}, {{pedido}}…", "Categorías de Meta", "Estado de aprobación en Meta"],
-  etiquetas: ["Etiquetas con nombre y color", "Uso en conversaciones y clientes"],
   automatizaciones: ["Disparadores: nuevo WhatsApp, sin respuesta, pedido, sin compra", "Acciones: asignar, etiquetar, mensaje, tarea", "Historial de ejecuciones"],
   notificaciones: ["Elegir qué avisos recibir", "Nuevo lead, mensaje, tarea vencida, asignación…"],
   integraciones: ["Sistema de gestión de la distribuidora", "Cola de envíos con reintentos", "Google Sheets, Mercado Pago, ERP (futuro)"],
@@ -102,6 +102,17 @@ async function SectionBody({ slug, phase, session }: { slug: string; phase: numb
           names={Object.fromEntries(members.map((m) => [m.id, m.displayName]))}
           canEdit={can(session.role, "equipos", "editar", session.overrides) && can(session.role, "equipos", "crear", session.overrides)}
           canDelete={can(session.role, "equipos", "eliminar", session.overrides)}
+        />
+      );
+    }
+    case "etiquetas": {
+      const tags = (await getTags(session.orgId)).sort((a, b) => a.name.localeCompare(b.name, "es"));
+      return (
+        <TagsManager
+          tags={tags.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
+          canCreate={can(session.role, "etiquetas", "crear", session.overrides)}
+          canEdit={can(session.role, "etiquetas", "editar", session.overrides)}
+          canDelete={can(session.role, "etiquetas", "eliminar", session.overrides)}
         />
       );
     }

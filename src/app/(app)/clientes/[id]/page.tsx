@@ -9,6 +9,7 @@ import { getCustomer360, type Customer360 } from "@/server/customers/service";
 import { customerFormOptions } from "@/server/customers/options";
 import { getMembersMap, getTags, getZones } from "@/server/org/data";
 import { formatWhatsappId } from "@/lib/phone";
+import { CONVERSATION_STATUS_LABELS } from "@/types/model";
 import { PageBody } from "@/components/ui/page";
 import { Badge, StageBadge, TagChip } from "@/components/ui/badges";
 import { ActivityTimeline } from "@/components/activity/timeline";
@@ -199,12 +200,17 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
             ) : (
               <ul className="space-y-2 text-sm">
                 {conversations.map((cv) => (
-                  <li key={cv.id} className="flex items-start gap-2">
-                    <MessageCircle className="mt-0.5 size-4 shrink-0 text-brand-600" aria-hidden />
-                    <span className="min-w-0">
-                      <span className="block truncate">{cv.lastMessagePreview ?? "Conversación"}</span>
-                      <span className="text-xs text-ink-muted">{cv.lastMessageAt ? dateTime.format(cv.lastMessageAt) : ""} · {cv.status}</span>
-                    </span>
+                  <li key={cv.id}>
+                    <Link href={`/inbox?c=${cv.id}`} className="-mx-2 flex items-start gap-2 rounded-lg px-2 py-1 hover:bg-canvas">
+                      <MessageCircle className="mt-0.5 size-4 shrink-0 text-brand-600" aria-hidden />
+                      <span className="min-w-0">
+                        <span className="block truncate">{cv.lastMessagePreview ?? "Conversación"}</span>
+                        <span className="text-xs text-ink-muted">
+                          {cv.lastMessageAt ? dateTime.format(cv.lastMessageAt) : ""} · {CONVERSATION_STATUS_LABELS[cv.status]}
+                          {cv.unreadCount > 0 ? ` · ${cv.unreadCount} sin leer` : ""}
+                        </span>
+                      </span>
+                    </Link>
                   </li>
                 ))}
               </ul>

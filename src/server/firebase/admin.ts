@@ -2,7 +2,10 @@ import "server-only";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { serverEnv, usingEmulators } from "../env";
+
+type Bucket = ReturnType<ReturnType<typeof getStorage>["bucket"]>;
 
 /**
  * Firebase Admin SDK. Solo existe en el servidor: es el único que escribe en
@@ -40,6 +43,13 @@ function adminApp(): App {
 
 export function adminAuth(): Auth {
   return getAuth(adminApp());
+}
+
+/** Bucket de adjuntos. Solo el servidor accede (storage.rules niega todo al navegador). */
+export function adminBucket(): Bucket {
+  const name = serverEnv().FIREBASE_STORAGE_BUCKET;
+  if (!name) throw new Error("Falta FIREBASE_STORAGE_BUCKET para guardar adjuntos.");
+  return getStorage(adminApp()).bucket(name);
 }
 
 // settings() solo puede llamarse una vez por instancia; en desarrollo el

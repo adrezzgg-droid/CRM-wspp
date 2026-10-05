@@ -14,6 +14,9 @@ const schema = z.object({
   FIREBASE_PRIVATE_KEY: z.string().optional(),
   FIRESTORE_EMULATOR_HOST: z.string().optional(),
   FIREBASE_AUTH_EMULATOR_HOST: z.string().optional(),
+  FIREBASE_STORAGE_EMULATOR_HOST: z.string().optional(),
+  /** Bucket de Storage para adjuntos (p.ej. mi-proyecto.firebasestorage.app). */
+  FIREBASE_STORAGE_BUCKET: z.string().optional(),
   SESSION_DAYS: z.coerce.number().int().min(1).max(14).default(5),
   SECRETS_ENCRYPTION_KEY: z.string().optional(),
   WHATSAPP_APP_SECRET: z.string().optional(),
@@ -43,5 +46,5 @@ export function serverEnv(): ServerEnv {
 }
 
 export function usingEmulators(env: ServerEnv = serverEnv()): boolean {
-  return !!(env.FIRESTORE_EMULATOR_HOST || env.FIREBASE_AUTH_EMULATOR_HOST);
+  return !!(env.FIRESTORE_EMULATOR_HOST || env.FIREBASE_AUTH_EMULATOR_HOST || env.FIREBASE_STORAGE_EMULATOR_HOST);
 }

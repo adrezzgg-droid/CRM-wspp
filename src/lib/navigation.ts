@@ -58,7 +58,7 @@ export const CONFIG_SECTIONS: readonly ConfigSection[] = [
   { slug: "zonas", label: "Zonas", description: "Zonas y localidades para asignar vendedores.", resource: "configuracion", phase: 4 },
   { slug: "whatsapp", label: "WhatsApp", description: "Conexión con WhatsApp Cloud API.", resource: "whatsapp_config", phase: 9 },
   { slug: "plantillas", label: "Plantillas", description: "Plantillas de mensajes de WhatsApp.", resource: "plantillas", phase: 7 },
-  { slug: "etiquetas", label: "Etiquetas", description: "Etiquetas y colores.", resource: "etiquetas", phase: 3 },
+  { slug: "etiquetas", label: "Etiquetas", description: "Etiquetas con nombre y color para clientes y conversaciones.", resource: "etiquetas", phase: 3 },
   { slug: "automatizaciones", label: "Automatizaciones", description: "Reglas automáticas.", resource: "automatizaciones", phase: 7 },
   { slug: "notificaciones", label: "Notificaciones", description: "Qué avisos querés recibir.", resource: null, phase: 6 },
   { slug: "integraciones", label: "Integraciones", description: "Conectores con otros sistemas.", resource: "integraciones", phase: 9 },

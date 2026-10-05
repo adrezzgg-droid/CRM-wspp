@@ -34,14 +34,19 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - Clientes: `ownerId` es `null` (no ausente) si no tiene responsable; `whatsappId` es único por organización; `searchKeywords` se recalcula en cada escritura (`src/lib/search.ts`).
 - Valores compartidos entre Server y Client Components no pueden vivir en un módulo `"use client"` (ver `components/ui/styles.ts`).
 - Si el dev server da 404 en rutas nuevas, borrar `.next/dev` (caché de Turbopack).
+- **Mensajes entrantes: una sola puerta.** Todo entra por `ingestInbound` (`src/server/inbox/ingest-core.ts`), que es pura respecto de Next (recibe el Firestore) y la usan el simulador demo, el seed y, en la Fase 9, el webhook. El simulador arma el JSON exacto de Meta (`buildInboundPayload`) y lo pasa por `parseWebhook`. No escribir conversaciones/mensajes entrantes a mano.
+- Conversación: una por número y cuenta (`${accountId}_${waId}`); cerrarla y que el cliente escriba la reabre. Mensaje entrante/saliente: id = `wamid` (idempotencia y estados). `contactName` y `customerStage` están copiados en la conversación y se sincronizan al editar el cliente.
+- Salida: `senderFor(org)` (`src/server/inbox/sender.ts`). Demo nunca llama a Meta; real lanza 503 hasta la Fase 9. Fuera de la ventana de 24 h solo notas internas (plantillas en Fase 7).
+- Adjuntos: Storage es solo del servidor (`storage.rules` niega todo); el navegador los pide a `/api/conversations/{id}/messages/{msgId}/media`, que verifica alcance.
+- Bandeja en tiempo real desde el navegador: las consultas salen de `inboxQuery()` (`src/lib/inbox-filters.ts`) y el vendedor SIEMPRE filtra `assigneeId == uid` (las reglas no son filtros).
 
 ## Comandos
 
-- `npm run emulators` — Auth + Firestore locales (proyecto `demo-crm-whatsapp`, no requiere cuenta).
-- `npm run seed:demo` — reinicia la organización demo: un usuario por rol y 12 clientes (contraseña en `scripts/seed-demo.ts`, solo emulador).
+- `npm run emulators` — Auth + Firestore + Storage locales (proyecto `demo-crm-whatsapp`, no requiere cuenta).
+- `npm run seed:demo` — reinicia la organización demo: un usuario por rol, 12 clientes y conversaciones de ejemplo (entran por la ingestión real). Contraseña en `scripts/seed-demo.ts`, solo emulador.
 - `npm run org:crear -- --nombre "..." --admin-email ... --admin-nombre "..."` — organización real.
 - `npm run dev` · `npm run check` (typecheck + lint + test + build).
-- `npm run test:rules` — reglas en emulador (con los emuladores de desarrollo APAGADOS: usa los mismos puertos).
+- `npm run test:emulador` (alias `test:rules`) — reglas + ingestión contra el emulador (con los emuladores de desarrollo APAGADOS: usa los mismos puertos).
 - `npm run test:api` — API de punta a punta (con emuladores + seed + dev corriendo).
 
 ## Estado
@@ -49,15 +54,18 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 Fase 1 cerrada: Next.js 16 + Tailwind 4, Firebase, login con sesión por cookie y custom claims, proxy,
 guards, layout responsive con sidebar por permisos, banner DEMO, notificaciones en tiempo real.
 
-Fase 2 cerrada (pendiente de confirmación del dueño para pasar a la Fase 3):
-clientes (listado con búsqueda/filtros/paginación y alcance por rol, alta/edición, baja lógica, ficha 360°,
-notas, contactos, historial con antes/después), usuarios (alta con enlace de acceso, edición, baja/reactivación),
-roles y permisos editables por empresa, equipos, empresa y configuración general (país por defecto, horario).
-Pruebas: 59 unitarias, 32 de reglas, 17 de API.
+Fase 2 cerrada: clientes (listado, alta/edición, baja lógica, ficha 360°, notas, contactos, historial),
+usuarios, roles y permisos por empresa, equipos, empresa y configuración general.
+
+Fase 3 cerrada (pendiente de confirmación del dueño para pasar a la Fase 4):
+parser del webhook de Meta (todos los tipos), ingestión idempotente (cliente+lead+conversación+avisos),
+bandeja en tiempo real con 9 filtros, chat tipo WhatsApp, respuesta/nota interna/adjuntos, ventana de 24 h,
+asignación manual con trazabilidad, estado/prioridad/etiquetas, ABM de etiquetas, desplegable de notificaciones,
+simulador demo. Pruebas: 73 unitarias, 40 de emulador (reglas + ingestión), 25 de API.
 
 Cambios sobre lo heredado: `Order.driverId`; marca de lectura de notificaciones exige booleano; el supervisor
 tiene `asignar` sobre clientes (equipo); notas, contactos y actividades ya no son legibles por el vendedor desde
 el navegador (se las da el servidor filtradas); `Customer` suma `archived`, `archivedAt`, `searchKeywords` y
-`ownerId: string | null`.
+`ownerId: string | null`; `Conversation` suma `contactName`, `customerStage`, `firstResponseAt`, `closedAt`, `lastMessageDirection` y `assigneeId: string | null`.
 
 Especificación completa del producto: `docs/ESPECIFICACION.md`.

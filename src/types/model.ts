@@ -176,23 +176,46 @@ export type ConversationStatus =
   | "en_atencion"
   | "cerrada";
 
+export const CONVERSATION_STATUS_LABELS: Record<ConversationStatus, string> = {
+  nueva: "Nueva",
+  pendiente: "Pendiente",
+  en_atencion: "En atención",
+  cerrada: "Cerrada",
+};
+
+export type ConversationPriority = "baja" | "normal" | "alta" | "urgente";
+
+/**
+ * Una conversación por número de cliente y cuenta de WhatsApp: el id es
+ * `${whatsappAccountId}_${waContactId}`, así un mensaje nuevo nunca duplica
+ * la conversación. Cerrarla y que el cliente vuelva a escribir la reabre.
+ */
 export interface Conversation extends Audited, TenantScoped {
   id: Id;
   customerId: Id;
   whatsappAccountId: Id;
   waContactId: string;
+  /** Nombre visible (perfil de WhatsApp o nombre del cliente), desnormalizado para la bandeja. */
+  contactName: string;
+  /** Etapa del cliente, desnormalizada para los filtros "Nuevos leads" y "Clientes". */
+  customerStage: CustomerStage;
   status: ConversationStatus;
-  priority: "baja" | "normal" | "alta" | "urgente";
-  assigneeId?: Id;
+  priority: ConversationPriority;
+  /** `null` (no ausente) cuando no tiene responsable: permite filtrar "sin asignar". */
+  assigneeId: Id | null;
   teamId?: Id;
   tagIds: Id[];
   unreadCount: number;
   lastMessageAt?: Timestamp;
   lastMessagePreview?: string;
+  lastMessageDirection?: "in" | "out" | "internal";
   lastInboundAt?: Timestamp;
   /** Fin de la ventana de 24 h de Meta (lastInboundAt + 24 h). */
   serviceWindowEndsAt?: Timestamp;
   awaitingReply: boolean;
+  /** Primera respuesta del equipo (para medir tiempo de respuesta). */
+  firstResponseAt?: Timestamp;
+  closedAt?: Timestamp;
   leadId?: Id;
 }
 
@@ -227,6 +250,10 @@ export interface Message extends TenantScoped {
   attachments?: MessageAttachment[];
   location?: { lat: number; lng: number; name?: string; address?: string };
   interactive?: { id: string; title: string };
+  /** Tarjetas de contacto compartidas por el cliente. */
+  sharedContacts?: { name: string; phones: string[] }[];
+  /** wamid del mensaje al que responde (si el cliente citó uno). */
+  replyToId?: string;
   templateName?: string;
   senderId?: Id | "system" | "customer";
   status?: "queued" | "sent" | "delivered" | "read" | "failed";

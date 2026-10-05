@@ -343,7 +343,12 @@ export async function updateCustomer(session: Session, id: string, input: Update
       throw new ApiError(409, "Otra persona modificó este cliente recién. Recargá la página y volvé a intentar.");
     }
     if (changes.whatsappId && next.whatsappId) await assertUniqueWhatsapp(tx, session, next.whatsappId, id);
+    // Nombre y etapa están copiados en sus conversaciones (lista y filtros de la bandeja).
+    const conversations = changes.name || changes.stage ? await tx.get(col(session.orgId, "conversations").where("customerId", "==", id)) : null;
     tx.update(fresh.ref, write);
+    for (const c of conversations?.docs ?? []) {
+      tx.update(c.ref, { contactName: next.name, customerStage: next.stage });
+    }
 
     const { ownerId: ownerChange, stage: stageChange, ...rest } = changes;
     if (ownerChange) {

@@ -62,7 +62,25 @@ interface ApiData {
   setupLink: string;
   details: { path: string[] }[];
   error?: string;
+  conversationId: string;
+  newCustomer: boolean;
+  reopened: boolean;
+  conversation: { id: string; status: string; assigneeId: string | null; customerId: string; unreadCount: number; awaitingReply: boolean; customerStage: string };
+  message: { id: string; type: string; attachments?: { storagePath?: string }[] };
+  tag: { id: string };
 }
+
+/** multipart/form-data (adjuntos y simulador). */
+async function upload(who: Who, path: string, fields: Record<string, string>, file?: { name: string; type: string; bytes: Uint8Array }) {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.set(k, v);
+  if (file) form.set("file", new File([new Uint8Array(file.bytes)], file.name, { type: file.type }));
+  const res = await fetch(`${BASE}${path}`, { method: "POST", headers: { Cookie: cookies[who], Origin: BASE }, body: form });
+  return { status: res.status, data: (await res.json().catch(() => ({}))) as ApiData };
+}
+
+// PNG 1x1 válido.
+const PNG = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
 
 async function call(who: Who, method: string, path: string, body?: unknown, origin: string | null = BASE) {
   const headers: Record<string, string> = { Cookie: cookies[who] };
@@ -202,6 +220,88 @@ describe("usuarios y permisos", () => {
     } finally {
       assert.equal((await call("admin", "PUT", "/api/settings/permissions", { overrides: {} })).status, 200);
     }
+  });
+});
+
+describe("bandeja", () => {
+  const phone = randomPhone();
+  let convId = "";
+
+  test("un número nuevo entra como lead sin asignar (simulador → tubería real)", async () => {
+    const r = await upload("admin", "/api/demo/inbound", { phone, name: "Lead de Prueba", text: "Hola, ¿precios?" });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(r.data.newCustomer, true);
+    convId = r.data.conversationId;
+    const c = await call("admin", "GET", `/api/conversations/${convId}`);
+    assert.equal(c.data.conversation.status, "nueva");
+    assert.equal(c.data.conversation.assigneeId, null);
+    assert.equal(c.data.conversation.customerStage, "prospecto");
+    assert.equal(c.data.conversation.awaitingReply, true);
+  });
+
+  test("el vendedor no ve ni responde conversaciones que no son suyas", async () => {
+    assert.equal((await call("vendedor1", "GET", `/api/conversations/${convId}`)).status, 404);
+    assert.equal((await call("vendedor1", "POST", `/api/conversations/${convId}/messages`, { text: "hola" })).status, 404);
+  });
+
+  test("asignar: solo quien tiene permiso; el cliente sin dueño pasa al vendedor", async () => {
+    assert.equal((await call("vendedor1", "POST", `/api/conversations/${convId}/assign`, { assigneeId: uids.vendedor1 })).status, 403);
+    assert.equal((await call("admin", "POST", `/api/conversations/${convId}/assign`, { assigneeId: uids.lectura })).status, 422);
+    assert.equal((await call("admin", "POST", `/api/conversations/${convId}/assign`, { assigneeId: uids.vendedor1 })).status, 200);
+    const c = await call("vendedor1", "GET", `/api/conversations/${convId}`);
+    assert.equal(c.status, 200);
+    assert.equal((await call("vendedor1", "GET", `/api/customers/${c.data.conversation.customerId}`)).data.customer.ownerId, uids.vendedor1);
+  });
+
+  test("responder deja la conversación en atención; la nota interna no cambia nada", async () => {
+    assert.equal((await call("vendedor1", "POST", `/api/conversations/${convId}/messages`, { text: "Interna", note: true })).status, 200);
+    let c = (await call("vendedor1", "GET", `/api/conversations/${convId}`)).data.conversation;
+    assert.equal(c.awaitingReply, true);
+    const sent = await call("vendedor1", "POST", `/api/conversations/${convId}/messages`, { text: "¡Hola! Te paso la lista." });
+    assert.equal(sent.status, 200);
+    assert.match(sent.data.message.id, /^wamid.demo./);
+    c = (await call("vendedor1", "GET", `/api/conversations/${convId}`)).data.conversation;
+    assert.equal(c.status, "en_atencion");
+    assert.equal(c.awaitingReply, false);
+    assert.equal(c.unreadCount, 0);
+  });
+
+  test("solo lectura no responde ni anota", async () => {
+    assert.equal((await call("lectura", "POST", `/api/conversations/${convId}/messages`, { text: "x" })).status, 403);
+    assert.equal((await call("lectura", "POST", `/api/conversations/${convId}/messages`, { text: "x", note: true })).status, 403);
+  });
+
+  test("adjuntos: se envían, se sirven solo a quien corresponde y se validan", async () => {
+    const r = await upload("vendedor1", `/api/conversations/${convId}/attachments`, { caption: "Lista" }, { name: "foto.png", type: "image/png", bytes: PNG });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(r.data.message.type, "image");
+    const mediaPath = `/api/conversations/${convId}/messages/${encodeURIComponent(r.data.message.id)}/media?i=0`;
+    const ok = await fetch(`${BASE}${mediaPath}`, { headers: { Cookie: cookies.vendedor1 } });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get("content-type"), "image/png");
+    assert.equal((await ok.arrayBuffer()).byteLength, PNG.byteLength);
+    assert.equal((await fetch(`${BASE}${mediaPath}`, { headers: { Cookie: cookies.vendedor2 } })).status, 404);
+    const bad = await upload("vendedor1", `/api/conversations/${convId}/attachments`, {}, { name: "x.html", type: "text/html", bytes: new Uint8Array([60]) });
+    assert.equal(bad.status, 415);
+  });
+
+  test("cerrar y que el cliente vuelva a escribir la reabre", async () => {
+    assert.equal((await call("vendedor1", "PATCH", `/api/conversations/${convId}`, { status: "cerrada" })).status, 200);
+    const again = await upload("admin", "/api/demo/inbound", { phone, text: "Una consulta más" });
+    assert.equal(again.data.reopened, true);
+    const c = (await call("vendedor1", "GET", `/api/conversations/${convId}`)).data.conversation;
+    assert.equal(c.status, "pendiente");
+    assert.equal(c.assigneeId, uids.vendedor1);
+  });
+
+  test("etiquetas: el admin las administra; nombres únicos", async () => {
+    const name = `PRUEBA${Date.now()}`;
+    assert.equal((await call("vendedor1", "POST", "/api/tags", { name, color: "#123456" })).status, 403);
+    const created = await call("admin", "POST", "/api/tags", { name, color: "#123456" });
+    assert.equal(created.status, 200);
+    assert.equal((await call("admin", "POST", "/api/tags", { name: name.toLowerCase(), color: "#654321" })).status, 409);
+    assert.equal((await call("vendedor1", "PATCH", `/api/conversations/${convId}`, { tagIds: [created.data.tag.id] })).status, 200);
+    assert.equal((await call("admin", "DELETE", `/api/tags/${created.data.tag.id}`)).status, 200);
   });
 });
 

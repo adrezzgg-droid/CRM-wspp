@@ -1,5 +1,5 @@
-import type { Activity, CustomerStage } from "@/types/model";
-import { CUSTOMER_STAGE_LABELS } from "@/types/model";
+import type { Activity, ConversationStatus, CustomerStage } from "@/types/model";
+import { CONVERSATION_STATUS_LABELS, CUSTOMER_STAGE_LABELS } from "@/types/model";
 
 /** Nombres legibles de los campos que aparecen en el historial de cambios. */
 const FIELD_LABELS: Record<string, string> = {
@@ -15,6 +15,9 @@ const FIELD_LABELS: Record<string, string> = {
   customerType: "Tipo de cliente",
   industry: "Rubro",
   ownerId: "Responsable",
+  assigneeId: "Atiende",
+  status: "Estado",
+  priority: "Prioridad",
   stage: "Etapa",
   needsReactivation: "Para reactivar",
   tagIds: "Etiquetas",
@@ -30,7 +33,8 @@ export interface TimelineLookups {
 function formatValue(field: string, value: unknown, l: TimelineLookups): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Sí" : "No";
-  if (field === "ownerId") return l.members.get(String(value)) ?? "usuario eliminado";
+  if (field === "ownerId" || field === "assigneeId") return l.members.get(String(value)) ?? "usuario eliminado";
+  if (field === "status") return CONVERSATION_STATUS_LABELS[value as ConversationStatus] ?? String(value);
   if (field === "zoneId") return l.zones.get(String(value)) ?? String(value);
   if (field === "stage") return CUSTOMER_STAGE_LABELS[value as CustomerStage] ?? String(value);
   if (field === "tagIds" && Array.isArray(value)) return value.map((t) => l.tags.get(t) ?? t).join(", ") || "—";

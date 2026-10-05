@@ -166,3 +166,45 @@ export const generalSettingsInput = z.object({
     .refine((h) => h.from < h.to, "El horario de cierre tiene que ser posterior al de apertura")
     .nullable(),
 });
+
+// ─────────────────────────────── Bandeja ────────────────────────────────────
+
+export const CONVERSATION_STATUSES = ["nueva", "pendiente", "en_atencion", "cerrada"] as const;
+export const CONVERSATION_PRIORITIES = ["baja", "normal", "alta", "urgente"] as const;
+
+export const messageInput = z.object({
+  text: text(4096, "Mensaje").min(1, "El mensaje está vacío"),
+  /** true = nota interna: no se envía al cliente. */
+  note: z.boolean().default(false),
+});
+
+export const conversationUpdate = z
+  .object({
+    // "nueva" la pone solo el sistema.
+    status: z.enum(["pendiente", "en_atencion", "cerrada"]),
+    priority: z.enum(CONVERSATION_PRIORITIES),
+    tagIds: z.array(id).max(20, "Máximo 20 etiquetas"),
+  })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, "No hay cambios");
+
+export const assignInput = z.object({ assigneeId: id.nullable() });
+
+/** Simulador del modo demo: un mensaje entrante como si llegara de WhatsApp. */
+export const DEMO_INBOUND_TYPES = ["text", "image", "document", "audio", "video", "location", "contacts", "button_reply", "list_reply"] as const;
+export const demoInboundInput = z.object({
+  phone: text(40, "Teléfono").min(6, "Ingresá un número"),
+  name: optionalText(80, "Nombre"),
+  type: z.enum(DEMO_INBOUND_TYPES).default("text"),
+  text: optionalText(4096, "Texto"),
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+  placeName: optionalText(120, "Lugar"),
+});
+
+// ─────────────────────────────── Etiquetas ──────────────────────────────────
+
+export const tagInput = z.object({
+  name: text(40, "Nombre").min(1, "El nombre es obligatorio").transform((v) => v.toUpperCase()),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido"),
+});

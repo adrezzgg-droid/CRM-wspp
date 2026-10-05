@@ -11,6 +11,8 @@ import type { Role } from "../src/server/permissions/matrix.ts";
 import type { Customer, CustomerStage } from "../src/types/model.ts";
 import { customerKeywords } from "../src/lib/search.ts";
 import { toWhatsappId } from "../src/lib/phone.ts";
+import { buildInboundPayload, messagePreview, parseWebhook, type MetaMessage } from "../src/lib/whatsapp/webhook.ts";
+import { ingestInbound } from "../src/server/inbox/ingest-core.ts";
 import { createOrganizationDocs, ensureUser, initAdmin, isEmulator, parseArgs, upsertMember } from "./lib/provision.ts";
 
 const ORG_ID = "demo";
@@ -98,8 +100,18 @@ const CUSTOMERS: [string, string, string, string, string, string, string | null,
 async function seedCustomers(db: Firestore, uids: Record<string, string>) {
   const col = db.collection(`organizations/${ORG_ID}/customers`);
   // Reinicio: se borran los datos comerciales demo anteriores (solo en la org demo).
-  for (const name of ["customers", "activities", "notes", "contacts"]) {
+  for (const name of ["customers", "activities", "notes", "contacts", "conversations", "leads", "assignments"]) {
     const old = await db.collection(`organizations/${ORG_ID}/${name}`).get();
+    if (name === "conversations") {
+      for (const c of old.docs) {
+        const msgs = await c.ref.collection("messages").get();
+        for (let i = 0; i < msgs.docs.length; i += 400) {
+          const del = db.batch();
+          msgs.docs.slice(i, i + 400).forEach((d) => del.delete(d.ref));
+          await del.commit();
+        }
+      }
+    }
     for (let i = 0; i < old.docs.length; i += 400) {
       const del = db.batch();
       old.docs.slice(i, i + 400).forEach((d) => del.delete(d.ref));
@@ -144,6 +156,80 @@ async function seedCustomers(db: Firestore, uids: Record<string, string>) {
   await batch.commit();
 }
 
+/**
+ * Conversaciones de ejemplo. Entran por la MISMA ingestión que un webhook de
+ * Meta (payload real → parser → ingestInbound), no se escriben a mano.
+ */
+async function seedConversations(db: Firestore, uids: Record<string, string>) {
+  const now = Date.now();
+  const account = {
+    id: "demo",
+    orgId: ORG_ID,
+    isDemo: true,
+    displayPhone: "+54 9 351 000-0000 (demo)",
+    phoneNumberId: `demo-${ORG_ID}`,
+    wabaId: "demo",
+    verifyTokenSet: false,
+    tokenSet: false,
+    connectionStatus: "sin_configurar",
+    webhookStatus: "sin_verificar",
+    createdAt: now,
+    createdBy: "system",
+    updatedAt: now,
+    updatedBy: "system",
+  };
+  await db.doc(`organizations/${ORG_ID}/whatsappAccounts/demo`).set(account);
+  const target = { orgId: ORG_ID, isDemo: true, accountId: "demo" };
+
+  let n = 0;
+  async function inbound(phone: string, name: string, minutesAgo: number, message: Omit<MetaMessage, "from" | "id" | "timestamp">) {
+    n += 1;
+    const payload = buildInboundPayload({
+      phoneNumberId: account.phoneNumberId,
+      displayPhone: account.displayPhone,
+      from: toWhatsappId(phone, "54")!,
+      profileName: name,
+      wamid: `wamid.seed.${n}`,
+      timestamp: now - minutesAgo * 60_000,
+      message,
+    });
+    const [m] = parseWebhook(payload).messages;
+    return ingestInbound(db, target, m);
+  }
+  async function reply(conversationId: string, sender: string, text: string, minutesAgo: number) {
+    n += 1;
+    const ts = now - minutesAgo * 60_000;
+    const ref = db.doc(`organizations/${ORG_ID}/conversations/${conversationId}`);
+    await ref.collection("messages").doc(`wamid.demo.seed${n}`).set({
+      id: `wamid.demo.seed${n}`, orgId: ORG_ID, isDemo: true, conversationId, direction: "out", type: "text", text, senderId: sender, status: "read", timestamp: ts, createdAt: ts,
+    });
+    await ref.update({ lastMessageAt: ts, lastMessagePreview: messagePreview({ type: "text", text }), lastMessageDirection: "out", awaitingReply: false, unreadCount: 0, status: "en_atencion", firstResponseAt: ts });
+  }
+  const text = (body: string) => ({ type: "text", text: { body } });
+
+  // Cliente activo de Juan: se asigna solo a él (responsable del cliente).
+  const jose = await inbound("351 555 1234", "José Fernández", 95, text("Buen día! Para mañana necesito 20 kg de pechuga y 10 de alitas"));
+  await reply(jose.conversationId, uids.vendedor1, "Buen día José! Te lo anoto para mañana a primera hora 👍", 90);
+  await inbound("351 555 1234", "José Fernández", 12, text("Ah, y sumame 5 kg de muslo por favor"));
+
+  // Cliente de María, con ubicación.
+  await inbound("3543 44 1122", "Carolina Vega", 40, text("Hola María, ¿me pasás la lista de precios mayorista?"));
+  await inbound("3543 44 1122", "Carolina Vega", 39, { type: "location", location: { latitude: -31.2919, longitude: -64.2913, name: "Mayorista Norte", address: "Villa Allende" } });
+
+  // Leads nuevos, sin asignar.
+  await inbound("351 666 1010", "Martín Acosta", 25, text("Hola, tengo una rotisería en barrio Jardín. ¿Hacen envíos? ¿Cuál es el mínimo?"));
+  await inbound("351 666 2020", "Restó La Esquina", 8, text("Buenas, ¿precio del pollo entero por cajón?"));
+  await inbound("351 666 2020", "Restó La Esquina", 7, { type: "interactive", interactive: { type: "button_reply", button_reply: { id: "precios", title: "Ver precios" } } });
+
+  // Prospecto existente sin responsable.
+  await inbound("351 555 6789", "Valeria Castro", 180, text("¿Siguen teniendo la promo de alitas?"));
+
+  // Conversación cerrada.
+  const cerrada = await inbound("3543 44 2233", "Pablo Giménez", 60 * 26, text("Gracias, llegó todo bien"));
+  await reply(cerrada.conversationId, uids.vendedor2, "¡Genial Pablo! Cualquier cosa avisame", 60 * 25);
+  await db.doc(`organizations/${ORG_ID}/conversations/${cerrada.conversationId}`).update({ status: "cerrada", closedAt: now - 60 * 25 * 60_000 });
+}
+
 const { auth, db } = initAdmin();
 console.log(`Destino: ${isEmulator() ? "EMULADOR" : `proyecto ${process.env.FIREBASE_PROJECT_ID}`}`);
 
@@ -177,6 +263,7 @@ for (const doc of (await db.collection(`organizations/${ORG_ID}/members`).get())
 await seedZonesAndTeam(db, uids);
 await seedNotifications(db, uids);
 await seedCustomers(db, uids);
+await seedConversations(db, uids);
 
 console.log(`Demo listo: "${ORG_NAME}" (${ORG_ID})`);
 for (const u of USERS) console.log(`  ${u.role.padEnd(13)} ${u.email}`);
