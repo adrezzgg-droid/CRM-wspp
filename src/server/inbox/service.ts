@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import type { z } from "zod";
 import type {
+  WhatsappTemplate,
   Assignment,
   Conversation,
   Customer,
@@ -27,6 +28,8 @@ import { toWhatsappId } from "@/lib/phone";
 import { advanceLead } from "@/lib/assignment";
 import type { assignInput, conversationUpdate, demoInboundInput } from "@/lib/schemas";
 import { ingestInbound, type IngestResult } from "./ingest-core";
+import { fireAutomations } from "@/server/automations/run";
+import { renderTemplate, toMetaBody } from "@/lib/templates";
 import { senderFor, type OutboundMedia } from "./sender";
 
 const col = (orgId: string, c: Parameters<typeof orgPath>[1]) => adminDb().collection(orgPath(orgId, c));
@@ -98,12 +101,17 @@ async function recordOutbound(session: Session, conv: Conversation, message: Mes
       awaitingSince: FieldValue.delete(),
       slaAlertedAt: FieldValue.delete(),
       unreadCount: 0,
-      ...(current.status === "nueva" || current.status === "pendiente" ? { status: "en_atencion" } : {}),
+      // Escribirle al cliente la deja "en atención" (también si estaba cerrada).
+      ...(current.status !== "en_atencion" ? { status: "en_atencion" } : {}),
+      ...(current.status === "cerrada" ? { closedAt: FieldValue.delete() } : {}),
       ...(firstResponse ? { firstResponseAt: now } : {}),
       updatedAt: now,
       updatedBy: session.uid,
     });
     tx.update(col(session.orgId, "customers").doc(conv.customerId), { lastContactAt: now });
+    if (current.status === "cerrada") {
+      recordActivityIn(tx, activity(session, conv, "conversacion.reabierta", `${session.member.displayName} le escribió al cliente: conversación reabierta`), now);
+    }
 
     if (firstResponse) {
       recordActivityIn(tx, activity(session, conv, "conversacion.respondida", `${session.member.displayName} respondió por primera vez`), now);
@@ -145,6 +153,26 @@ export async function sendText(session: Session, conversationId: string, text: s
   assertWindow(conv);
   const { wamid } = await senderFor(session.org).sendText(conv.waContactId, text);
   const message = outboundMessage(session, conv, wamid, "text", { text });
+  await recordOutbound(session, conv, message);
+  return message;
+}
+
+/**
+ * Plantilla aprobada por Meta. Es la única forma de escribirle al cliente
+ * fuera de la ventana de 24 h. Las variables las completa quien envía.
+ */
+export async function sendTemplate(session: Session, conversationId: string, templateId: string, values: Record<string, string>): Promise<Message> {
+  const conv = await loadConversation(session, conversationId, "editar");
+  const snap = await col(session.orgId, "whatsappTemplates").doc(templateId).get();
+  const tpl = snap.data() as WhatsappTemplate | undefined;
+  if (!tpl) throw new ApiError(404, "Plantilla no encontrada");
+  if (tpl.metaStatus !== "aprobada") throw new ApiError(409, "La plantilla todavía no está aprobada por Meta");
+  const { order } = toMetaBody(tpl.body);
+  const missing = order.filter((v) => !values[v]?.trim());
+  if (missing.length) throw new ApiError(422, `Completá: ${missing.map((m) => `{{${m}}}`).join(", ")}`);
+  const text = renderTemplate(tpl.body, values);
+  const { wamid } = await senderFor(session.org).sendTemplate(conv.waContactId, { name: tpl.name, language: tpl.language, params: order.map((v) => values[v]) });
+  const message = outboundMessage(session, conv, wamid, "template", { text, templateName: tpl.name });
   await recordOutbound(session, conv, message);
   return message;
 }
@@ -478,5 +506,9 @@ export async function simulateInbound(session: Session, input: z.output<typeof d
   });
   const [parsed] = parseWebhook(payload).messages;
   if (!parsed) throw new ApiError(422, "El mensaje simulado no es válido");
-  return ingestInbound(adminDb(), { orgId: session.orgId, isDemo: true, accountId: account.id, storedMedia }, parsed);
+  const result = await ingestInbound(adminDb(), { orgId: session.orgId, isDemo: true, accountId: account.id, storedMedia }, parsed);
+  if (!result.duplicate && result.newConversation) {
+    await fireAutomations(session.orgId, "mensaje_nuevo_contacto", { customerId: result.customerId, conversationId: result.conversationId });
+  }
+  return result;
 }

@@ -58,3 +58,19 @@ test("edición parcial de cliente: no aplica defaults y distingue vacío de ause
   assert.equal(r.company, undefined);
   assert.ok(!("stage" in r));
 });
+
+test("plantillas: nombre de Meta y variables conocidas", async () => {
+  const { templateInput } = await import("./schemas.ts");
+  assert.equal(templateInput.safeParse({ name: "Confirmación", category: "utility", body: "x" }).success, false);
+  assert.equal(templateInput.safeParse({ name: "confirmacion", category: "utility", body: "Hola {{nombreX}}" }).success, false);
+  assert.equal(templateInput.parse({ name: "confirmacion", category: "utility", body: "Hola {{nombre}}" }).language, "es_AR");
+});
+
+test("automatizaciones: parámetros según el disparador", async () => {
+  const { automationInput } = await import("./schemas.ts");
+  const base = { name: "Regla", actions: [{ type: "marcar_reactivar" }] };
+  assert.equal(automationInput.safeParse({ ...base, trigger: "sin_compra_dias" }).success, false, "faltan los días");
+  assert.equal(automationInput.safeParse({ ...base, trigger: "sin_compra_dias", triggerParams: { days: 30 } }).success, true);
+  assert.equal(automationInput.safeParse({ ...base, trigger: "sin_compra_dias", triggerParams: { days: 30 }, delayMinutes: 10 }).success, false, "demora solo en eventos");
+  assert.equal(automationInput.safeParse({ ...base, trigger: "pedido_creado", actions: [{ type: "enviar_mensaje" }] }).success, false, "mensaje sin texto ni plantilla");
+});

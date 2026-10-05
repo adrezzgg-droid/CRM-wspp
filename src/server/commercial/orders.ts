@@ -15,6 +15,7 @@ import { applyOrderToStats, canTransition, COUNTED_STATUSES, formatOrderNumber, 
 import type { OrderListQuery, orderInput, orderStatusInput } from "@/lib/schemas";
 import { col, getPipeline, readCommercialEffects } from "./common";
 import { getProducts } from "./products";
+import { fireAutomations } from "@/server/automations/run";
 
 export const ORDERS_PAGE_SIZE = 50;
 
@@ -207,6 +208,7 @@ export async function createOrder(session: Session, input: z.output<typeof order
       enqueueIn(tx, session, connectors, "order.confirmed", created, now);
     }
   });
+  if (input.confirm) await fireAutomations(session.orgId, "pedido_creado", { customerId: created.customerId, conversationId: created.conversationId, orderId: created.id });
   return created;
 }
 
@@ -273,6 +275,7 @@ export async function changeOrderStatus(session: Session, id: string, input: z.o
       tx.create(nRef, n);
     }
   });
+  if (input.status === "confirmado") await fireAutomations(session.orgId, "pedido_creado", { customerId: order.customerId, conversationId: order.conversationId, orderId: id });
   return { ...order, status: input.status };
 }
 

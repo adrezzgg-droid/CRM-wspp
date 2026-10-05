@@ -14,6 +14,10 @@ import { Alert } from "@/components/ui/controls";
 import { MessageBubble } from "./message-bubble";
 import { initials, makeFormatters, formatBytes } from "./format";
 import type { InboxProps } from "./types";
+import { TemplateSendButton, type TemplateOption } from "./template-send";
+import type { TemplateVariable } from "@/lib/templates";
+import { msToZoned } from "@/lib/tasks";
+import { useNow } from "@/lib/use-now";
 
 const PAGE = 150;
 
@@ -32,6 +36,7 @@ export function ChatView({
 }) {
   const { ready } = useFirebaseSession();
   const fmt = useMemo(() => makeFormatters(props.timezone), [props.timezone]);
+  const now = useNow();
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -60,7 +65,7 @@ export function ChatView({
     if (shouldMarkRead) api("POST", `/api/conversations/${c.id}/read`).catch(() => undefined);
   }, [shouldMarkRead, c.id, c.unreadCount]);
 
-  const windowOpen = isWindowOpen(c.serviceWindowEndsAt);
+  const windowOpen = isWindowOpen(c.serviceWindowEndsAt, now);
 
   return (
     <>
@@ -111,7 +116,17 @@ export function ChatView({
       </div>
 
       {props.canEdit ? (
-        <Composer conversationId={c.id} windowOpen={windowOpen} closed={c.status === "cerrada"} />
+        <Composer
+          conversationId={c.id}
+          windowOpen={windowOpen}
+          closed={c.status === "cerrada"}
+          templates={props.templates}
+          templateDefaults={{
+            nombre: c.contactName,
+            vendedor: c.assigneeId ? names.get(c.assigneeId) : undefined,
+            fecha: msToZoned(now, props.timezone).date.split("-").reverse().join("/"),
+          }}
+        />
       ) : (
         <p className="border-t border-line bg-surface px-4 py-3 text-center text-xs text-ink-muted">Tu rol solo permite ver las conversaciones.</p>
       )}
@@ -119,7 +134,19 @@ export function ChatView({
   );
 }
 
-function Composer({ conversationId, windowOpen, closed }: { conversationId: string; windowOpen: boolean; closed: boolean }) {
+function Composer({
+  conversationId,
+  windowOpen,
+  closed,
+  templates,
+  templateDefaults,
+}: {
+  conversationId: string;
+  windowOpen: boolean;
+  closed: boolean;
+  templates: TemplateOption[];
+  templateDefaults: Partial<Record<TemplateVariable, string>>;
+}) {
   const [text, setText] = useState("");
   const [note, setNote] = useState(!windowOpen);
   const [file, setFile] = useState<File | null>(null);
@@ -155,10 +182,13 @@ function Composer({ conversationId, windowOpen, closed }: { conversationId: stri
 
   return (
     <div className={`shrink-0 border-t border-line px-2 py-2 sm:px-4 ${note ? "bg-amber-50" : "bg-surface"}`}>
-      {!windowOpen && !note && (
-        <p className="mb-2 rounded-lg bg-amber-100 px-3 py-2 text-xs text-amber-900">
-          Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp solo permite escribirle con una plantilla aprobada (Fase 7). Podés dejar una nota interna.
-        </p>
+      {!windowOpen && (
+        <div className="mb-2 rounded-lg bg-amber-100 px-3 py-2 text-xs text-amber-900">
+          Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp solo permite escribirle con una plantilla aprobada. Podés dejar una nota interna.
+          <div>
+            <TemplateSendButton conversationId={conversationId} templates={templates} defaults={templateDefaults} prominent />
+          </div>
+        </div>
       )}
       {closed && <p className="mb-2 text-xs text-ink-muted">La conversación está cerrada. Si respondés, vuelve a quedar en atención.</p>}
       {error && <div className="mb-2"><Alert>{error}</Alert></div>}
@@ -184,6 +214,7 @@ function Composer({ conversationId, windowOpen, closed }: { conversationId: stri
           <StickyNote className="size-5" aria-hidden />
           <span className="sr-only">Nota interna</span>
         </button>
+        {windowOpen && <TemplateSendButton conversationId={conversationId} templates={templates} defaults={templateDefaults} />}
         <button
           type="button"
           onClick={() => fileRef.current?.click()}

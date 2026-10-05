@@ -16,6 +16,7 @@ const HINTS: Record<NotificationType, string> = {
   nueva_asignacion: "Te asignan una conversación, una tarea o una entrega.",
   pedido_generado: "Un pedido que vendiste fue entregado.",
   cliente_reactivar: "Un cliente tuyo pasa a estar para reactivar.",
+  automatizacion: "Una automatización te envía un aviso.",
 };
 
 export function NotificationPrefsForm({ types, initial }: { types: NotificationType[]; initial: Partial<Record<NotificationType, boolean>> }) {

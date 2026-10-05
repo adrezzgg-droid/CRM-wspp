@@ -22,6 +22,8 @@ export interface WhatsappSender {
   readonly mode: "demo" | "cloud";
   sendText(to: string, text: string): Promise<{ wamid: string }>;
   sendMedia(to: string, media: OutboundMedia): Promise<{ wamid: string }>;
+  /** Plantilla aprobada por Meta (la única forma de escribir fuera de las 24 h). */
+  sendTemplate(to: string, template: { name: string; language: string; params: string[] }): Promise<{ wamid: string }>;
 }
 
 const demoSender: WhatsappSender = {
@@ -32,13 +34,16 @@ const demoSender: WhatsappSender = {
   async sendMedia() {
     return { wamid: `wamid.demo.${randomUUID()}` };
   },
+  async sendTemplate() {
+    return { wamid: `wamid.demo.${randomUUID()}` };
+  },
 };
 
 const notConnected = async (): Promise<never> => {
   throw new ApiError(503, "WhatsApp todavía no está conectado para esta empresa. La conexión con Meta se configura en la Fase 9.");
 };
 
-const cloudSender: WhatsappSender = { mode: "cloud", sendText: notConnected, sendMedia: notConnected };
+const cloudSender: WhatsappSender = { mode: "cloud", sendText: notConnected, sendMedia: notConnected, sendTemplate: notConnected };
 
 export function senderFor(org: { isDemo: boolean }): WhatsappSender {
   return org.isDemo ? demoSender : cloudSender;

@@ -78,6 +78,7 @@ interface ApiData {
   reopened: boolean;
   conversation: { id: string; status: string; assigneeId: string | null; teamId?: string; customerId: string; unreadCount: number; awaitingReply: boolean; customerStage: string; leadId?: string };
   message: { id: string; type: string; attachments?: { storagePath?: string }[] };
+  runs: unknown[];
   tag: { id: string };
 }
 
@@ -514,7 +515,7 @@ describe("productos, pipeline y pedidos", () => {
         leadId: conv.leadId,
       });
       assert.equal(r.status, 200, JSON.stringify(r.data));
-      assert.equal((await call("vendedor1", "GET", `/api/customers/${conv.customerId}`)).data.customer.stage, "cliente_nuevo");
+      assert.ok(["cliente_nuevo", "cliente_activo"].includes((await call("vendedor1", "GET", `/api/customers/${conv.customerId}`)).data.customer.stage), "deja de ser prospecto (la automatización del demo lo pasa a activo)");
     } finally {
       await call("admin", "PUT", "/api/settings/assignment", ASSIGNMENT_ON);
     }
@@ -594,6 +595,75 @@ describe("tareas y Mi día", () => {
       assert.equal(res.status, 200, who);
       assert.match(await res.text(), /Buen|Buenas/);
     }
+  });
+});
+
+describe("plantillas y automatizaciones", () => {
+  type Row = { id: string; metaStatus?: string; type?: string; tagIds?: string[]; lastMessageDirection?: string; awaitingReply?: boolean; stage?: string };
+  const tplName = `prueba_${Date.now()}`;
+  let tplId = "";
+
+  test("plantillas: solo el admin las crea; variables y nombres válidos", async () => {
+    assert.equal((await call("vendedor1", "POST", "/api/templates", { name: tplName, category: "utility", body: "Hola {{nombre}}" })).status, 403);
+    assert.equal((await call("admin", "POST", "/api/templates", { name: tplName, category: "utility", body: "Hola {{apodo}}" })).status, 422);
+    const r = await call("admin", "POST", "/api/templates", { name: tplName, category: "utility", body: "Hola {{nombre}}, soy {{vendedor}}" });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    tplId = (r.data as unknown as { template: Row }).template.id;
+    assert.equal((r.data as unknown as { template: Row }).template.metaStatus, "borrador");
+    assert.equal((await call("admin", "POST", "/api/templates", { name: tplName, category: "marketing", body: "x" })).status, 409);
+    assert.equal((await call("vendedor1", "GET", "/api/templates")).status, 200, "el vendedor las consulta");
+  });
+
+  test("enviar plantilla: solo aprobadas, con todas sus variables", async () => {
+    const conv = "demo_5493515551234"; // José, a cargo de vendedor1
+    assert.equal((await call("vendedor1", "POST", `/api/conversations/${conv}/template`, { templateId: tplId, values: { nombre: "José", vendedor: "Juan" } })).status, 409, "borrador");
+    assert.equal((await call("admin", "POST", `/api/templates/${tplId}/status`, { metaStatus: "aprobada" })).status, 200);
+    assert.equal((await call("vendedor1", "POST", `/api/conversations/${conv}/template`, { templateId: tplId, values: { nombre: "José" } })).status, 422, "falta {{vendedor}}");
+    const ok = await call("vendedor1", "POST", `/api/conversations/${conv}/template`, { templateId: tplId, values: { nombre: "José", vendedor: "Juan" } });
+    assert.equal(ok.status, 200, JSON.stringify(ok.data));
+    assert.equal(ok.data.message.type, "template");
+    assert.equal((await call("vendedor2", "POST", `/api/conversations/${conv}/template`, { templateId: tplId, values: { nombre: "x", vendedor: "y" } })).status, 404);
+  });
+
+  test("escribirle a una conversación cerrada la reabre (plantilla fuera de las 24 h)", async () => {
+    const conv = "demo_5493543442233"; // Pablo: cerrada y con la ventana vencida
+    const r = await call("admin", "POST", `/api/conversations/${conv}/template`, { templateId: "seguimiento", values: { nombre: "Pablo", vendedor: "María" } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal((await call("admin", "GET", `/api/conversations/${conv}`)).data.conversation.status, "en_atencion");
+    assert.equal((await call("admin", "POST", `/api/conversations/${conv}/messages`, { text: "texto libre" })).status, 409, "texto libre sigue bloqueado fuera de las 24 h");
+  });
+
+  test("automatizaciones: solo el admin; referencias válidas; una plantilla en uso no se borra", async () => {
+    const rule = { name: "Prueba API", trigger: "pedido_creado", actions: [{ type: "enviar_mensaje", templateId: tplId }] };
+    assert.equal((await call("vendedor1", "POST", "/api/automations", rule)).status, 403);
+    assert.equal((await call("admin", "POST", "/api/automations", { ...rule, actions: [{ type: "agregar_etiqueta", tagId: "no-existe" }] })).status, 422);
+    const created = await call("admin", "POST", "/api/automations", { ...rule, enabled: false });
+    assert.equal(created.status, 200, JSON.stringify(created.data));
+    const id = (created.data as unknown as { automation: Row }).automation.id;
+    assert.equal((await call("admin", "DELETE", `/api/templates/${tplId}`)).status, 409);
+    assert.equal((await call("admin", "POST", `/api/automations/${id}/toggle`, { enabled: true })).status, 200);
+    assert.equal((await call("admin", "DELETE", `/api/automations/${id}`)).status, 200);
+    assert.equal((await call("admin", "DELETE", `/api/templates/${tplId}`)).status, 200);
+  });
+
+  test("contacto nuevo: la bienvenida automática sale y no cuenta como respuesta", async () => {
+    const sim = await upload("admin", "/api/demo/inbound", { phone: randomPhone(), name: "Auto Bienvenida", text: "Hola!" });
+    assert.equal(sim.status, 200);
+    const conv = (await call("admin", "GET", `/api/conversations/${sim.data.conversationId}`)).data.conversation as unknown as Row;
+    assert.equal(conv.lastMessageDirection, "out", "se envió la bienvenida");
+    assert.equal(conv.awaitingReply, true, "sigue esperando a una persona");
+    assert.ok(conv.tagIds?.includes("nuevo"));
+  });
+
+  test("ejecutar ahora: marca para reactivar a quien no compra hace 30 días", async () => {
+    assert.equal((await call("vendedor1", "POST", "/api/automations/run")).status, 403);
+    const r = await call("admin", "POST", "/api/automations/run");
+    assert.equal(r.status, 200);
+    const laura = (await call("admin", "GET", "/api/customers/demo-cliente-2")).data.customer as unknown as Row & { needsReactivation: boolean };
+    assert.equal(laura.needsReactivation, true);
+    assert.equal(laura.stage, "cliente_inactivo");
+    const runs = (await call("admin", "GET", "/api/automations")).data as unknown as { runs: { automationId: string; status: string }[] };
+    assert.ok(runs.runs.some((x) => x.automationId === "reactivar-30d" && x.status === "ok"));
   });
 });
 

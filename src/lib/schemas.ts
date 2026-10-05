@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 import { ACTIONS, RESOURCES, ROLES } from "../server/permissions/matrix.ts";
+import { unknownVariables } from "./templates.ts";
 
 const text = (max: number, label: string) =>
   z.string().trim().max(max, `${label}: máximo ${max} caracteres`);
@@ -377,8 +378,82 @@ export const NOTIFICATION_TYPES = [
   "nueva_asignacion",
   "pedido_generado",
   "cliente_reactivar",
+  "automatizacion",
 ] as const;
 
 export const notificationPrefsInput = z.object({
   prefs: z.partialRecord(z.enum(NOTIFICATION_TYPES), z.boolean()),
 });
+
+// ───────────────────────────── Plantillas ───────────────────────────────────
+
+export const TEMPLATE_CATEGORIES = ["marketing", "utility", "authentication"] as const;
+export const META_STATUSES = ["borrador", "pendiente", "aprobada", "rechazada"] as const;
+
+export const templateInput = z.object({
+  /** Nombre técnico para Meta: minúsculas, números y guion bajo. */
+  name: z.string().trim().regex(/^[a-z0-9_]{1,60}$/, "Solo minúsculas, números y guion bajo (ej.: confirmacion_pedido)"),
+  category: z.enum(TEMPLATE_CATEGORIES),
+  language: z.string().trim().regex(/^[a-z]{2}(_[A-Z]{2})?$/, "Código de idioma inválido (ej.: es_AR)").default("es_AR"),
+  body: text(1024, "Mensaje")
+    .min(1, "El mensaje está vacío")
+    .refine((b) => unknownVariables(b).length === 0, "Hay variables desconocidas. Usá {{nombre}}, {{empresa}}, {{vendedor}}, {{pedido}}, {{fecha}} o {{importe}}."),
+});
+
+export const templateStatusInput = z.object({ metaStatus: z.enum(META_STATUSES) });
+
+export const sendTemplateInput = z.object({
+  templateId: id,
+  /** Valores de las variables (los completa el formulario con datos del cliente). */
+  values: z.record(z.string(), z.string().trim().max(500)),
+});
+
+// ─────────────────────────── Automatizaciones ───────────────────────────────
+
+export const AUTOMATION_TRIGGERS = ["mensaje_nuevo_contacto", "sin_respuesta_cliente", "pedido_creado", "sin_compra_dias"] as const;
+
+export const automationActionInput = z.discriminatedUnion("type", [
+  z
+    .object({ type: z.literal("enviar_mensaje"), templateId: id.optional(), text: optionalText(1024, "Mensaje") })
+    .refine((a) => !!a.templateId || !!a.text, "Elegí una plantilla o escribí el mensaje"),
+  z.object({ type: z.literal("agregar_etiqueta"), tagId: id }),
+  z.object({
+    type: z.literal("crear_tarea"),
+    taskType: z.enum(TASK_TYPES),
+    dueInHours: z.coerce.number().int().min(0).max(720),
+    description: optionalText(500, "Descripción"),
+  }),
+  z.object({ type: z.literal("cambiar_estado_cliente"), stage: z.enum(CUSTOMER_STAGES) }),
+  z.object({ type: z.literal("marcar_reactivar") }),
+  z.object({
+    type: z.literal("notificar"),
+    to: z.enum(["responsable", "supervisores", "administradores"]),
+    message: text(200, "Aviso").min(1, "Escribí el aviso"),
+  }),
+]);
+
+export const automationInput = z
+  .object({
+    name: text(80, "Nombre").min(2, "El nombre es obligatorio"),
+    enabled: z.boolean().default(true),
+    trigger: z.enum(AUTOMATION_TRIGGERS),
+    triggerParams: z
+      .object({
+        hours: z.coerce.number().int().min(1).max(720).optional(),
+        days: z.coerce.number().int().min(1).max(365).optional(),
+      })
+      .default({}),
+    conditions: z
+      .object({
+        stages: z.array(z.enum(CUSTOMER_STAGES)).max(5).optional(),
+        zoneIds: z.array(id).max(50).optional(),
+      })
+      .default({}),
+    delayMinutes: z.coerce.number().int().min(0).max(10_080).default(0),
+    actions: z.array(automationActionInput).min(1, "Agregá al menos una acción").max(10),
+  })
+  .refine((a) => a.trigger !== "sin_respuesta_cliente" || !!a.triggerParams.hours, { message: "Indicá las horas", path: ["triggerParams"] })
+  .refine((a) => a.trigger !== "sin_compra_dias" || !!a.triggerParams.days, { message: "Indicá los días", path: ["triggerParams"] })
+  .refine((a) => a.delayMinutes === 0 || a.trigger === "mensaje_nuevo_contacto" || a.trigger === "pedido_creado", { message: "La demora solo aplica a reglas de evento", path: ["delayMinutes"] });
+
+export const automationToggleInput = z.object({ enabled: z.boolean() });

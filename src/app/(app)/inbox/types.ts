@@ -33,4 +33,6 @@ export interface InboxProps {
   currency: string;
   /** Crear tareas desde el chat (null = sin permiso). */
   taskOptions: TaskFormOptions | null;
+  /** Plantillas aprobadas por Meta que se pueden enviar desde el chat. */
+  templates: { id: string; name: string; body: string }[];
 }

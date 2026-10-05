@@ -454,6 +454,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   nueva_asignacion: "Nueva asignación (conversación o entrega)",
   pedido_generado: "Pedido entregado",
   cliente_reactivar: "Cliente para reactivar",
+  automatizacion: "Avisos de automatizaciones",
 };
 
 export interface Note extends Audited, TenantScoped {
@@ -528,24 +529,30 @@ export interface WhatsappTemplate extends Audited, TenantScoped {
   metaTemplateId?: string;
 }
 
+/**
+ * Disparadores. "Sin respuesta del vendedor" no está acá: es la alerta de
+ * demora (settings/assignment). Crear el lead y asignar vendedor tampoco son
+ * acciones: los hace siempre la ingestión.
+ */
 export type AutomationTrigger =
   | "mensaje_nuevo_contacto"
   | "sin_respuesta_cliente"
-  | "sin_respuesta_vendedor"
   | "pedido_creado"
   | "sin_compra_dias";
 
-export interface AutomationAction {
-  type:
-    | "crear_lead"
-    | "asignar_vendedor"
-    | "agregar_etiqueta"
-    | "enviar_mensaje"
-    | "crear_tarea"
-    | "cambiar_estado_cliente"
-    | "marcar_reactivar"
-    | "notificar";
-  params: Record<string, unknown>;
+export type AutomationAction =
+  | { type: "enviar_mensaje"; templateId?: Id; text?: string }
+  | { type: "agregar_etiqueta"; tagId: Id }
+  | { type: "crear_tarea"; taskType: TaskType; dueInHours: number; description?: string }
+  | { type: "cambiar_estado_cliente"; stage: CustomerStage }
+  | { type: "marcar_reactivar" }
+  | { type: "notificar"; to: "responsable" | "supervisores" | "administradores"; message: string };
+
+export interface AutomationConditions {
+  /** Solo clientes en estas etapas (vacío = todas). */
+  stages?: CustomerStage[];
+  /** Solo clientes de estas zonas (vacío = todas). */
+  zoneIds?: Id[];
 }
 
 export interface Automation extends Audited, TenantScoped {
@@ -553,9 +560,40 @@ export interface Automation extends Audited, TenantScoped {
   name: string;
   enabled: boolean;
   trigger: AutomationTrigger;
-  conditions: Record<string, unknown>;
-  delayMinutes?: number;
+  /** sin_respuesta_cliente: horas; sin_compra_dias: días. */
+  triggerParams: { hours?: number; days?: number };
+  conditions: AutomationConditions;
+  /** Demora antes de ejecutar (solo disparadores de evento). */
+  delayMinutes: number;
   actions: AutomationAction[];
+  lastRunAt?: Timestamp;
+  runsCount?: number;
+}
+
+/** Registro de cada ejecución. El id incluye el caso: la misma regla no corre dos veces para lo mismo. */
+export interface AutomationRun extends TenantScoped {
+  id: Id;
+  automationId: Id;
+  automationName: string;
+  trigger: AutomationTrigger;
+  subjectKey: string;
+  customerId?: Id;
+  conversationId?: Id;
+  orderId?: Id;
+  status: "en_curso" | "ok" | "parcial" | "error";
+  results: { type: AutomationAction["type"]; status: "ok" | "omitida" | "error"; detail?: string }[];
+  at: Timestamp;
+}
+
+/** Ejecución diferida (regla con demora). La procesa la tarea programada. */
+export interface AutomationJob extends TenantScoped {
+  id: Id;
+  automationId: Id;
+  runAt: Timestamp;
+  subjectKey: string;
+  context: { customerId: Id; conversationId?: Id; orderId?: Id };
+  status: "pendiente" | "hecha";
+  createdAt: Timestamp;
 }
 
 export type NotificationType =
@@ -566,7 +604,8 @@ export type NotificationType =
   | "cliente_esperando"
   | "nueva_asignacion"
   | "pedido_generado"
-  | "cliente_reactivar";
+  | "cliente_reactivar"
+  | "automatizacion";
 
 export interface Notification extends TenantScoped {
   id: Id;
@@ -633,6 +672,8 @@ export const COLLECTIONS = {
   automations: "automations",
   notifications: "notifications",
   outbox: "outbox",
+  automationRuns: "automationRuns",
+  automationJobs: "automationJobs",
   secrets: "secrets",
   settings: "settings",
 } as const;

@@ -8,6 +8,7 @@ import { customerFormOptions } from "@/server/customers/options";
 import { getPipeline } from "@/server/commercial/common";
 import { listProducts } from "@/server/commercial/products";
 import { taskFormOptions } from "@/server/tasks/options";
+import { listTemplates } from "@/server/automations/service";
 import { InboxApp } from "./inbox-app";
 
 export const metadata: Metadata = { title: "Bandeja" };
@@ -58,6 +59,11 @@ export default async function InboxPage() {
       customerOptions={canEditCustomer ? await customerFormOptions(session) : null}
       canEditCustomer={canEditCustomer}
       currency={session.org.currency}
+      templates={
+        can(session.role, "plantillas", "ver", session.overrides)
+          ? (await listTemplates(session)).filter((t) => t.metaStatus === "aprobada").map((t) => ({ id: t.id, name: t.name, body: t.body }))
+          : []
+      }
       taskOptions={can(session.role, "tareas", "crear", session.overrides) ? await taskFormOptions(session) : null}
       opportunityOptions={
         pipeline && pipelineCtx

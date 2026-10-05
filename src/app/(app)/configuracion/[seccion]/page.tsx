@@ -14,6 +14,9 @@ import { TeamsManager } from "../sections/teams-manager";
 import { GeneralForm, OrganizationForm } from "../sections/settings-forms";
 import { TagsManager } from "../sections/tags-manager";
 import { NotificationPrefsForm } from "../sections/notification-prefs";
+import { TemplatesManager } from "../sections/templates-manager";
+import { AutomationsManager } from "../sections/automations-manager";
+import { listAutomations, listTemplates, recentRuns } from "@/server/automations/service";
 import type { Member, NotificationType } from "@/types/model";
 import { ZonesManager } from "../sections/zones-manager";
 import { AssignmentForm } from "../sections/assignment-form";
@@ -23,8 +26,6 @@ import { orgPath } from "@/types/model";
 
 const PENDING_ITEMS: Record<string, string[]> = {
   whatsapp: ["Número conectado, Phone Number ID y WABA ID", "Access Token cifrado en el servidor", "URL y Verify Token del webhook", "Estado de conexión y prueba"],
-  plantillas: ["Plantillas con variables {{nombre}}, {{pedido}}…", "Categorías de Meta", "Estado de aprobación en Meta"],
-  automatizaciones: ["Disparadores: nuevo WhatsApp, sin respuesta, pedido, sin compra", "Acciones: asignar, etiquetar, mensaje, tarea", "Historial de ejecuciones"],
   integraciones: ["Sistema de gestión de la distribuidora", "Cola de envíos con reintentos", "Google Sheets, Mercado Pago, ERP (futuro)"],
 };
 
@@ -138,6 +139,32 @@ async function SectionBody({ slug, phase, session }: { slug: string; phase: numb
         />
       );
     }
+    case "plantillas": {
+      const templates = await listTemplates(session);
+      return (
+        <TemplatesManager
+          templates={templates.map((t) => ({ id: t.id, name: t.name, category: t.category, language: t.language, body: t.body, metaStatus: t.metaStatus }))}
+          canEdit={can(session.role, "plantillas", "editar", session.overrides) && can(session.role, "plantillas", "crear", session.overrides)}
+          isDemo={session.org.isDemo}
+        />
+      );
+    }
+    case "automatizaciones": {
+      const [automations, runs, tags, zones, templates] = await Promise.all([listAutomations(session), recentRuns(session), getTags(session.orgId), getZones(session.orgId), listTemplates(session)]);
+      return (
+        <AutomationsManager
+          automations={automations}
+          runs={runs}
+          timezone={session.org.timezone}
+          canEdit={can(session.role, "automatizaciones", "editar", session.overrides)}
+          lookups={{
+            tags: tags.map((t) => ({ id: t.id, name: t.name })),
+            zones: zones.map((z) => ({ id: z.id, name: z.name })),
+            templates: templates.map((t) => ({ id: t.id, name: t.name, approved: t.metaStatus === "aprobada" })),
+          }}
+        />
+      );
+    }
     case "notificaciones": {
       const me = (await adminDb().collection(orgPath(session.orgId, "members")).doc(session.uid).get()).data() as Member;
       // Cada rol ve solo los avisos que le pueden llegar.
@@ -146,7 +173,7 @@ async function SectionBody({ slug, phase, session }: { slug: string; phase: numb
           ? ["nueva_asignacion", "tarea_vencida"]
           : session.role === "solo_lectura"
             ? []
-            : ["nuevo_lead", "nuevo_mensaje", "cliente_esperando", "lead_sin_responder", "nueva_asignacion", "tarea_vencida", "pedido_generado", "cliente_reactivar"];
+            : ["nuevo_lead", "nuevo_mensaje", "cliente_esperando", "lead_sin_responder", "nueva_asignacion", "tarea_vencida", "pedido_generado", "cliente_reactivar", "automatizacion"];
       if (!types.length) return <p className="text-sm text-ink-muted">Tu rol no recibe avisos.</p>;
       return <NotificationPrefsForm types={types} initial={me.notificationPrefs ?? {}} />;
     }

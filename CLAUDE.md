@@ -42,12 +42,14 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - Demoras: `awaitingSince` = primer mensaje sin respuesta; `runSlaCheck` (`src/server/inbox/sla-core.ts`) avisa una vez por espera. Lo dispara `/api/cron/sla` (Bearer CRON_SECRET, cada 5 min en `vercel.json`) o el botón de Configuración → Asignación.
 - Pipeline/pedidos (`src/server/commercial/`): los efectos sobre lead y cliente van por `readCommercialEffects` (lee todo antes de escribir, como exigen las transacciones). Pedido: número correlativo en `settings/counters` (transacción), transiciones por actor en `src/lib/orders.ts`, `counted` evita sumar dos veces a las estadísticas del cliente; al confirmar se encola en `outbox` solo para conectores habilitados en `settings/integrations`. El repartidor ve un pedido solo si `driverId` es él.
 - Tareas: fecha/hora siempre en la zona horaria de la empresa (`zonedTimeToMs`/`dayBounds` en `src/lib/tasks.ts`); el cliente manda `dueDate` + `dueTime`, nunca un timestamp del navegador. Vencidas: `runOverdueTasks` (`src/server/tasks/overdue-core.ts`) en el mismo cron que las demoras. "Mi día" (`src/server/my-day.ts`) es siempre personal aunque el rol vea más. En Server Components no usar `Date.now()` (lint de pureza): calcularlo en el módulo de servidor.
+- Automatizaciones: motor en `src/server/automations/engine-core.ts` (sin Next; recibe Firestore y la función de envío). Las de evento se disparan con `fireAutomations` DESPUÉS de guardar (ingestión de contacto nuevo, pedido confirmado) y nunca rompen la operación; las de tiempo y las agendadas corren en el cron. Idempotencia: `automationRuns/{regla}__{caso}` se crea con `create()`. Un mensaje automático no cuenta como respuesta (no toca `awaitingReply`).
+- Plantillas: variables con nombre (`{{nombre}}`…) que se envían a Meta en formato posicional (`toMetaBody` en `src/lib/templates.ts`). Solo se envían las `aprobada`; editar el texto de una aprobada la vuelve a borrador. En el demo el estado se simula a mano. Escribirle al cliente (texto o plantilla) deja la conversación en atención, aunque estuviera cerrada.
 - Bandeja en tiempo real desde el navegador: las consultas salen de `inboxQuery()` (`src/lib/inbox-filters.ts`) y el vendedor SIEMPRE filtra `assigneeId == uid` (las reglas no son filtros).
 
 ## Comandos
 
 - `npm run emulators` — Auth + Firestore + Storage locales (proyecto `demo-crm-whatsapp`, no requiere cuenta).
-- `npm run seed:demo` — reinicia la organización demo: un usuario por rol, 12 clientes, conversaciones, catálogo, oportunidades y tareas de ejemplo (entran por la ingestión real). Contraseña en `scripts/seed-demo.ts`, solo emulador.
+- `npm run seed:demo` — reinicia la organización demo: un usuario por rol, 12 clientes, conversaciones, catálogo, oportunidades, tareas, plantillas y automatizaciones de ejemplo (entran por la ingestión real). Contraseña en `scripts/seed-demo.ts`, solo emulador.
 - `npm run org:crear -- --nombre "..." --admin-email ... --admin-nombre "..."` — organización real.
 - `npm run dev` · `npm run check` (typecheck + lint + test + build).
 - `npm run test:emulador` (alias `test:rules`) — reglas + ingestión contra el emulador (con los emuladores de desarrollo APAGADOS: usa los mismos puertos).
@@ -79,11 +81,17 @@ sobre el lead y conversión del prospecto), catálogo de productos, pedidos (alt
 numeración correlativa, borrador/confirmado/preparación/reparto/entregado/cancelado por rol, repartidor,
 estadísticas del cliente, cola del conector), "Mis entregas" del repartidor.
 
-Fase 6 cerrada (pendiente de confirmación del dueño para pasar a la Fase 7):
+Fase 6 cerrada:
 tareas (6 tipos, vistas Hoy/Vencidas/Próximas/Completadas con contadores, completar con resultado que queda en
 el historial, reprogramar, asignar dentro del equipo, crear desde lista/ficha/bandeja), avisos de tareas vencidas
 (cron), "Mi día" por rol, historial de llamadas/visitas en la ficha, preferencias personales de notificación.
-Pruebas: 90 unitarias, 48 de emulador, 45 de API.
+
+Fase 7 cerrada (pendiente de confirmación del dueño para pasar a la Fase 8):
+plantillas de WhatsApp (ABM, variables, vista previa, formato Meta, estado de aprobación simulable en demo, envío
+desde la bandeja también fuera de las 24 h), automatizaciones SI → ENTONCES (contacto nuevo, cliente sin responder,
+pedido confirmado, sin compras; condiciones por etapa y zona; demora; 6 acciones), registro de ejecuciones,
+"Ejecutar ahora" y cron. Tipos de automatización estrictos (antes eran parámetros sueltos).
+Pruebas: 98 unitarias, 53 de emulador, 51 de API.
 
 Cambios sobre lo heredado: `Order.driverId`; marca de lectura de notificaciones exige booleano; el supervisor
 tiene `asignar` sobre clientes (equipo); notas, contactos y actividades ya no son legibles por el vendedor desde

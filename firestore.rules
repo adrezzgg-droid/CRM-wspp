@@ -134,6 +134,11 @@ service cloud.firestore {
         allow read: if inOrg(orgId) && isAdmin();
         allow write: if false;
       }
+      match /automationRuns/{id} {
+        allow read: if inOrg(orgId) && isAdmin();
+        allow write: if false;
+      }
+      match /automationJobs/{id} { allow read, write: if false; }
 
       match /notifications/{id} {
         allow read: if inOrg(orgId) && resource.data.userId == request.auth.uid;

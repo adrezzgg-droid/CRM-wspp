@@ -101,7 +101,7 @@ const CUSTOMERS: [string, string, string, string, string, string, string | null,
 async function seedCustomers(db: Firestore, uids: Record<string, string>) {
   const col = db.collection(`organizations/${ORG_ID}/customers`);
   // Reinicio: se borran los datos comerciales demo anteriores (solo en la org demo).
-  for (const name of ["customers", "activities", "notes", "contacts", "conversations", "leads", "assignments", "opportunities", "orders", "products", "outbox", "tasks"]) {
+  for (const name of ["customers", "activities", "notes", "contacts", "conversations", "leads", "assignments", "opportunities", "orders", "products", "outbox", "tasks", "whatsappTemplates", "automations", "automationRuns", "automationJobs"]) {
     const old = await db.collection(`organizations/${ORG_ID}/${name}`).get();
     if (name === "conversations") {
       for (const c of old.docs) {
@@ -318,6 +318,90 @@ async function seedTasks(db: Firestore, uids: Record<string, string>) {
   await batch.commit();
 }
 
+/** Plantillas y automatizaciones de ejemplo (las de la especificación). */
+async function seedAutomations(db: Firestore) {
+  const now = Date.now();
+  const base = { orgId: ORG_ID, isDemo: true, createdAt: now, createdBy: "system", updatedAt: now, updatedBy: "system" };
+  const batch = db.batch();
+  const TEMPLATES: [string, string, string, string][] = [
+    ["bienvenida", "utility", "aprobada", "¡Hola {{nombre}}! Gracias por escribirnos. Soy {{vendedor}} y te voy a atender. ¿En qué te ayudo?"],
+    ["seguimiento", "marketing", "aprobada", "Hola {{nombre}}, ¿pudiste ver la propuesta que te pasamos? Cualquier duda, escribime. {{vendedor}}"],
+    ["reactivacion", "marketing", "aprobada", "¡Hola {{nombre}}! Hace un tiempo que no te vemos. Esta semana tenemos precios especiales para {{empresa}}. ¿Te paso la lista?"],
+    ["confirmacion_pedido", "utility", "aprobada", "{{nombre}}, tu pedido {{pedido}} por {{importe}} quedó confirmado el {{fecha}}. ¡Gracias por tu compra!"],
+    ["postventa", "utility", "borrador", "Hola {{nombre}}, ¿llegó todo bien con tu pedido {{pedido}}? Contanos cómo te fue."],
+  ];
+  for (const [name, category, metaStatus, body] of TEMPLATES) {
+    const ref = db.doc(`organizations/${ORG_ID}/whatsappTemplates/${name}`);
+    const variables = [...new Set([...body.matchAll(/{{(w+)}}/g)].map((m) => m[1]))];
+    batch.set(ref, { ...base, id: name, name, category, language: "es_AR", body, variables, metaStatus });
+  }
+  const RULES = [
+    {
+      id: "bienvenida",
+      name: "Bienvenida a contactos nuevos",
+      enabled: true,
+      trigger: "mensaje_nuevo_contacto",
+      triggerParams: {},
+      conditions: {},
+      delayMinutes: 0,
+      actions: [
+        { type: "enviar_mensaje", text: "¡Hola {{nombre}}! Gracias por escribir a Distribuidora Demo. En un momento te atiende {{vendedor}}." },
+        { type: "agregar_etiqueta", tagId: "nuevo" },
+      ],
+    },
+    {
+      id: "seguimiento-24h",
+      name: "Seguimiento si el cliente no responde",
+      enabled: true,
+      trigger: "sin_respuesta_cliente",
+      triggerParams: { hours: 24 },
+      conditions: {},
+      delayMinutes: 0,
+      actions: [{ type: "crear_tarea", taskType: "seguimiento", dueInHours: 0, description: "{{nombre}} no respondió en 24 h" }],
+    },
+    {
+      id: "pedido-activo",
+      name: "Pedido confirmado: cliente activo y confirmación",
+      enabled: true,
+      trigger: "pedido_creado",
+      triggerParams: {},
+      conditions: {},
+      delayMinutes: 0,
+      actions: [
+        { type: "cambiar_estado_cliente", stage: "cliente_activo" },
+        { type: "enviar_mensaje", templateId: "confirmacion_pedido" },
+      ],
+    },
+    {
+      id: "reactivar-30d",
+      name: "Reactivar clientes sin compras en 30 días",
+      enabled: true,
+      trigger: "sin_compra_dias",
+      triggerParams: { days: 30 },
+      conditions: { stages: ["cliente_nuevo", "cliente_activo"] },
+      delayMinutes: 0,
+      actions: [{ type: "marcar_reactivar" }, { type: "agregar_etiqueta", tagId: "reactivar" }],
+    },
+    {
+      id: "postventa",
+      name: "Postventa al día siguiente",
+      enabled: false,
+      trigger: "pedido_creado",
+      triggerParams: {},
+      conditions: {},
+      delayMinutes: 1440,
+      actions: [{ type: "crear_tarea", taskType: "postventa", dueInHours: 2, description: "Preguntar cómo llegó el pedido {{pedido}}" }],
+    },
+  ];
+  for (const r of RULES) batch.set(db.doc(`organizations/${ORG_ID}/automations/${r.id}`), { ...base, ...r, runsCount: 0 });
+  // Un cliente activo que hace 35 días no compra (para probar la reactivación).
+  batch.update(db.doc(`organizations/${ORG_ID}/customers/demo-cliente-2`), {
+    lastPurchaseAt: now - 35 * 86_400_000,
+    stats: { ordersCount: 4, totalPurchased: 412000, avgTicket: 103000 },
+  });
+  await batch.commit();
+}
+
 const { auth, db } = initAdmin();
 console.log(`Destino: ${isEmulator() ? "EMULADOR" : `proyecto ${process.env.FIREBASE_PROJECT_ID}`}`);
 
@@ -354,6 +438,7 @@ await seedCustomers(db, uids);
 await seedConversations(db, uids);
 await seedCatalogAndPipeline(db, uids);
 await seedTasks(db, uids);
+await seedAutomations(db);
 
 console.log(`Demo listo: "${ORG_NAME}" (${ORG_ID})`);
 for (const u of USERS) console.log(`  ${u.role.padEnd(13)} ${u.email}`);
