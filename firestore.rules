@@ -1,0 +1,151 @@
+rules_version = '2';
+
+// Reglas de seguridad de Firestore.
+//
+// Principios:
+//  1. Aislamiento por organización: el token (custom claims) trae orgId y role,
+//     y solo se puede leer dentro de la propia organización.
+//  2. El cliente es SOLO LECTURA. Toda escritura pasa por la API del servidor
+//     (Admin SDK), que valida datos, aplica permisos y registra auditoría.
+//  3. Los secretos (token de WhatsApp) no son legibles ni escribibles desde el
+//     cliente bajo ninguna circunstancia.
+//  4. Activity, auditLogs y webhook events son de solo inserción desde servidor.
+//
+// Esta matriz debe mantenerse alineada con src/server/permissions/matrix.ts.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function claimOrg() { return request.auth.token.orgId; }
+    function claimRole() { return request.auth.token.role; }
+    function inOrg(orgId) { return signedIn() && claimOrg() == orgId; }
+
+    function isAdmin()      { return claimRole() == 'admin'; }
+    function isSupervisor() { return claimRole() == 'supervisor'; }
+    function isSeller()     { return claimRole() == 'vendedor'; }
+    function isReadOnly()   { return claimRole() == 'solo_lectura'; }
+    function isDriver()     { return claimRole() == 'repartidor'; }
+
+    // Roles que pueden ver datos comerciales de la organización
+    function canSeeCommercial() {
+      return isAdmin() || isSupervisor() || isSeller() || isReadOnly();
+    }
+
+    // Documento "propio": asignado al usuario actual
+    function isMine(data) {
+      return data.get('assigneeId', data.get('ownerId', data.get('sellerId', ''))) == request.auth.uid;
+    }
+
+    // Visibilidad con alcance: admin/supervisor/solo lectura ven todo lo de la
+    // organización (el filtrado fino por equipo lo aplica el servidor); el
+    // vendedor únicamente lo propio.
+    function scopedRead(data) {
+      return isAdmin() || isSupervisor() || isReadOnly() || (isSeller() && isMine(data));
+    }
+
+    // Todo lo no declarado queda denegado.
+    match /{document=**} { allow read, write: if false; }
+
+    match /organizations/{orgId} {
+      allow read: if inOrg(orgId);
+      allow write: if false;
+
+      match /members/{uid} {
+        allow read: if inOrg(orgId) && (isAdmin() || isSupervisor() || request.auth.uid == uid);
+        allow write: if false;
+      }
+
+      match /teams/{id}  { allow read: if inOrg(orgId) && (isAdmin() || isSupervisor()); allow write: if false; }
+      match /zones/{id}  { allow read: if inOrg(orgId); allow write: if false; }
+      match /tags/{id}   { allow read: if inOrg(orgId) && !isDriver(); allow write: if false; }
+      match /products/{id} { allow read: if inOrg(orgId) && !isDriver(); allow write: if false; }
+      match /pipelines/{id} { allow read: if inOrg(orgId) && canSeeCommercial(); allow write: if false; }
+      match /whatsappTemplates/{id} { allow read: if inOrg(orgId) && canSeeCommercial(); allow write: if false; }
+
+      match /customers/{id} {
+        allow read: if inOrg(orgId) && scopedRead(resource.data);
+        allow write: if false;
+      }
+      match /contacts/{id} {
+        allow read: if inOrg(orgId) && canSeeCommercial();
+        allow write: if false;
+      }
+      match /leads/{id} {
+        allow read: if inOrg(orgId) && scopedRead(resource.data);
+        allow write: if false;
+      }
+
+      match /conversations/{id} {
+        allow read: if inOrg(orgId) && scopedRead(resource.data);
+        allow write: if false;
+
+        match /messages/{messageId} {
+          // Hereda el alcance de la conversación padre.
+          allow read: if inOrg(orgId) &&
+            scopedRead(get(/databases/$(database)/documents/organizations/$(orgId)/conversations/$(id)).data);
+          allow write: if false;
+        }
+      }
+      match /assignments/{id} {
+        allow read: if inOrg(orgId) && (isAdmin() || isSupervisor());
+        allow write: if false;
+      }
+
+      match /opportunities/{id} {
+        allow read: if inOrg(orgId) && scopedRead(resource.data);
+        allow write: if false;
+      }
+      match /orders/{id} {
+        // El repartidor ve los pedidos que tiene que entregar (driverId), no
+        // los vendidos (sellerId), por eso no usa isMine().
+        allow read: if inOrg(orgId) && (scopedRead(resource.data)
+          || (isDriver() && resource.data.get('driverId', '') == request.auth.uid));
+        allow write: if false;
+      }
+      match /tasks/{id} {
+        allow read: if inOrg(orgId) && (scopedRead(resource.data) || (isDriver() && isMine(resource.data)));
+        allow write: if false;
+      }
+      match /notes/{id} {
+        allow read: if inOrg(orgId) && canSeeCommercial();
+        allow write: if false;
+      }
+
+      match /activities/{id} {
+        allow read: if inOrg(orgId) && canSeeCommercial();
+        allow write: if false;
+      }
+      match /auditLogs/{id} {
+        allow read: if inOrg(orgId) && isAdmin();
+        allow write: if false;
+      }
+
+      match /whatsappAccounts/{id} {
+        // Datos públicos de la cuenta (sin token). Solo administración.
+        allow read: if inOrg(orgId) && isAdmin();
+        allow write: if false;
+      }
+      match /automations/{id} {
+        allow read: if inOrg(orgId) && isAdmin();
+        allow write: if false;
+      }
+
+      match /notifications/{id} {
+        allow read: if inOrg(orgId) && resource.data.userId == request.auth.uid;
+        // El usuario solo puede marcar como leída su propia notificación.
+        allow update: if inOrg(orgId)
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+          && request.resource.data.read is bool;
+        allow create, delete: if false;
+      }
+
+      match /outbox/{id}   { allow read, write: if false; }
+      match /secrets/{id}  { allow read, write: if false; }
+      match /settings/{id} { allow read: if inOrg(orgId); allow write: if false; }
+    }
+
+    match /webhookEvents/{id} { allow read, write: if false; }
+  }
+}

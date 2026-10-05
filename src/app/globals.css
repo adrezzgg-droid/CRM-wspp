@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/*
+ * Identidad visual del CRM.
+ * Marca: verde petróleo (confianza, cercano a la mensajería sin copiar a WhatsApp).
+ * Neutros: slate. Acento de estado: ámbar para DEMO y alertas.
+ */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-brand-50: #effaf7;
+  --color-brand-100: #d7f2ea;
+  --color-brand-200: #b1e4d6;
+  --color-brand-300: #7fcfbb;
+  --color-brand-400: #4bb39c;
+  --color-brand-500: #2a9781;
+  --color-brand-600: #1d7a69;
+  --color-brand-700: #1a6256;
+  --color-brand-800: #194f46;
+  --color-brand-900: #17423b;
+  --color-brand-950: #082622;
+
+  --color-canvas: #f5f7f8;
+  --color-surface: #ffffff;
+  --color-line: #e3e8eb;
+  --color-ink: #0f1d22;
+  --color-ink-muted: #5b6b73;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}

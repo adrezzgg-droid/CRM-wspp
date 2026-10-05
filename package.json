@@ -1,0 +1,44 @@
+{
+  "name": "crm-whatsapp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-crm-whatsapp \"node --test tests/rules/firestore-rules.test.ts\"",
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-crm-whatsapp",
+    "seed:demo": "node --env-file-if-exists=.env.local scripts/seed-demo.ts",
+    "org:crear": "node --env-file-if-exists=.env.local scripts/crear-organizacion.ts",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.0",
+    "lucide-react": "^1.52.0",
+    "next": "16.3.8",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.8",
+    "firebase-tools": "^15.32.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "type": "module"
+}
