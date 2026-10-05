@@ -1,5 +1,7 @@
 import type { Scope } from "@/server/permissions/matrix";
 import type { CustomerFormOptions } from "../clientes/customer-form";
+import type { OpportunityFormOptions } from "@/components/commercial/opportunity-form";
+import type { ProductOption } from "@/components/commercial/order-form";
 
 /** Datos que el servidor le pasa a la bandeja (ya recortados por permisos). */
 export interface InboxProps {
@@ -23,4 +25,9 @@ export interface InboxProps {
   /** Para editar el cliente desde el panel (null = sin permiso). */
   customerOptions: CustomerFormOptions | null;
   canEditCustomer: boolean;
+  /** Crear oportunidad desde el chat (null = sin permiso). */
+  opportunityOptions: OpportunityFormOptions | null;
+  /** Productos para crear un pedido desde el chat (null = sin permiso). */
+  orderProducts: ProductOption[] | null;
+  currency: string;
 }

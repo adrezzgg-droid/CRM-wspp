@@ -15,13 +15,14 @@ const BASE = process.env.BASE_URL ?? "http://localhost:3000";
 const AUTH_EMULATOR = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? "127.0.0.1:9099";
 const PASSWORD = process.env.DEMO_PASSWORD ?? "demo1234";
 
-type Who = "admin" | "supervisor" | "vendedor1" | "vendedor2" | "lectura";
+type Who = "admin" | "supervisor" | "vendedor1" | "vendedor2" | "lectura" | "repartidor";
 const EMAILS: Record<Who, string> = {
   admin: "admin@demo.test",
   supervisor: "supervisor@demo.test",
   vendedor1: "vendedor1@demo.test",
   vendedor2: "vendedor2@demo.test",
   lectura: "lectura@demo.test",
+  repartidor: "repartidor@demo.test",
 };
 
 const cookies = {} as Record<Who, string>;
@@ -55,7 +56,7 @@ interface CustomerRow {
   stage: string;
 }
 interface ApiData {
-  items: CustomerRow[];
+  items: (CustomerRow & { number?: string; driverId?: string })[];
   customer: CustomerRow;
   contact: { id: string };
   member: { id: string };
@@ -69,6 +70,10 @@ interface ApiData {
   alerted: number;
   lead: { id: string; status: string };
   zone: { id: string };
+  product: { id: string };
+  opportunity: { id: string; ownerId: string; stageId: string; probability: number; closedAt?: number };
+  order: { id: string; number: string; total: number; status: string; sellerId: string; counted: boolean };
+  nextCursor: string | null;
   newCustomer: boolean;
   reopened: boolean;
   conversation: { id: string; status: string; assigneeId: string | null; teamId?: string; customerId: string; unreadCount: number; awaitingReply: boolean; customerStage: string; leadId?: string };
@@ -401,6 +406,118 @@ describe("asignación automática, zonas y leads", () => {
     assert.equal((await call("vendedor1", "POST", "/api/assignment/sla")).status, 403);
     assert.equal((await fetch(`${BASE}/api/cron/sla`)).status, 401);
     assert.equal((await fetch(`${BASE}/api/cron/sla`, { headers: { Authorization: "Bearer cualquiera" } })).status, 401);
+  });
+});
+
+describe("productos, pipeline y pedidos", () => {
+  let productA = "";
+  let productB = "";
+  let ownCustomer = "";
+  type Stats = { stats: { ordersCount: number; totalPurchased: number } };
+
+  before(async () => {
+    ownCustomer = (await call("vendedor1", "GET", "/api/customers")).data.items[0].id;
+  });
+
+  test("productos: solo el admin los carga; códigos únicos", async () => {
+    const sku = `T${Date.now()}`;
+    assert.equal((await call("vendedor1", "POST", "/api/products", { name: "No", unit: "kg", price: 1 })).status, 403);
+    const a = await call("admin", "POST", "/api/products", { name: "Producto A", sku, unit: "kg", price: 1000.5 });
+    assert.equal(a.status, 200);
+    productA = a.data.product.id;
+    assert.equal((await call("admin", "POST", "/api/products", { name: "Otro", sku: sku.toLowerCase(), unit: "kg", price: 1 })).status, 409);
+    productB = (await call("admin", "POST", "/api/products", { name: "Producto B", unit: "caja", price: 250 })).data.product.id;
+    const list = await call("vendedor1", "GET", "/api/products?q=producto");
+    assert.ok(list.data.items.some((p) => p.id === productA));
+  });
+
+  test("oportunidades: el vendedor crea para sí y no ve las ajenas", async () => {
+    assert.equal((await call("vendedor1", "POST", "/api/opportunities", { customerId: ownCustomer, ownerId: uids.vendedor2 })).status, 403);
+    const o = await call("vendedor1", "POST", "/api/opportunities", { customerId: ownCustomer, estimatedValue: 50000, product: "Prueba" });
+    assert.equal(o.status, 200, JSON.stringify(o.data));
+    assert.equal(o.data.opportunity.ownerId, uids.vendedor1);
+    assert.equal(o.data.opportunity.stageId, "nuevo_lead");
+    const id = o.data.opportunity.id;
+    assert.equal((await call("vendedor2", "GET", `/api/opportunities/${id}`)).status, 404);
+    const moved = await call("vendedor1", "PATCH", `/api/opportunities/${id}`, { stageId: "cotizacion" });
+    assert.equal(moved.data.opportunity.probability, 50, "toma la probabilidad de la etapa");
+    assert.equal((await call("vendedor1", "PATCH", `/api/opportunities/${id}`, { stageId: "perdido" })).status, 422);
+    const lost = await call("vendedor1", "PATCH", `/api/opportunities/${id}`, { stageId: "perdido", lostReason: "Precio" });
+    assert.equal(lost.status, 200);
+    assert.ok(lost.data.opportunity.closedAt);
+    const mine = await call("vendedor1", "GET", "/api/opportunities");
+    for (const x of mine.data.items) assert.equal(x.ownerId, uids.vendedor1);
+  });
+
+  test("pedido: numeración, total, estadísticas del cliente y alcance", async () => {
+    const before = (await call("vendedor1", "GET", `/api/customers/${ownCustomer}`)).data.customer as unknown as Stats;
+    const r = await call("vendedor1", "POST", "/api/orders", {
+      customerId: ownCustomer,
+      items: [
+        { productId: productA, qty: 2 },
+        { productId: productB, qty: 3, unitPrice: 200 },
+      ],
+      confirm: true,
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.match(r.data.order.number, /^P-\d{6}$/);
+    assert.equal(r.data.order.total, 2601);
+    assert.equal(r.data.order.status, "confirmado");
+    const after = (await call("vendedor1", "GET", `/api/customers/${ownCustomer}`)).data.customer as unknown as Stats;
+    assert.equal(after.stats.ordersCount, before.stats.ordersCount + 1);
+    assert.equal(after.stats.totalPurchased, before.stats.totalPurchased + 2601);
+    const r2 = await call("vendedor1", "POST", "/api/orders", { customerId: ownCustomer, items: [{ productId: productB, qty: 1 }] });
+    assert.equal(r2.data.order.status, "borrador");
+    assert.equal(Number(r2.data.order.number.slice(2)), Number(r.data.order.number.slice(2)) + 1, "correlativo");
+    assert.equal((await call("vendedor2", "GET", `/api/orders/${r.data.order.id}`)).status, 404);
+    assert.equal((await call("vendedor1", "POST", "/api/orders", { customerId: ownCustomer, items: [{ productId: "no-existe", qty: 1 }] })).status, 422);
+    assert.equal((await call("repartidor", "POST", "/api/orders", { customerId: ownCustomer, items: [{ productId: productA, qty: 1 }] })).status, 403);
+  });
+
+  test("circuito de entrega: cada rol mueve lo suyo", async () => {
+    const id = (await call("vendedor1", "POST", "/api/orders", { customerId: ownCustomer, items: [{ productId: productA, qty: 1 }], confirm: true })).data.order.id;
+    assert.equal((await call("vendedor1", "POST", `/api/orders/${id}/status`, { status: "en_preparacion" })).status, 409, "el vendedor no despacha");
+    assert.equal((await call("repartidor", "GET", `/api/orders/${id}`)).status, 404, "el repartidor no lo ve hasta que se lo asignan");
+    assert.equal((await call("vendedor1", "POST", `/api/orders/${id}/driver`, { driverId: uids.repartidor })).status, 403);
+    assert.equal((await call("admin", "POST", `/api/orders/${id}/driver`, { driverId: uids.vendedor2 })).status, 422);
+    assert.equal((await call("admin", "POST", `/api/orders/${id}/driver`, { driverId: uids.repartidor })).status, 200);
+    const list = await call("repartidor", "GET", "/api/orders");
+    assert.ok(list.data.items.some((o) => o.id === id));
+    for (const o of list.data.items) assert.equal(o.driverId, uids.repartidor);
+    assert.equal((await call("repartidor", "POST", `/api/orders/${id}/status`, { status: "en_reparto" })).status, 409, "primero se prepara");
+    assert.equal((await call("admin", "POST", `/api/orders/${id}/status`, { status: "en_preparacion" })).status, 200);
+    assert.equal((await call("repartidor", "POST", `/api/orders/${id}/status`, { status: "en_reparto" })).status, 200);
+    assert.equal((await call("repartidor", "POST", `/api/orders/${id}/status`, { status: "entregado" })).status, 200);
+    assert.equal((await call("admin", "POST", `/api/orders/${id}/status`, { status: "cancelado", reason: "x" })).status, 409, "un entregado no se cancela");
+  });
+
+  test("cancelar descuenta de las compras y pide motivo", async () => {
+    const count = async () => ((await call("vendedor1", "GET", `/api/customers/${ownCustomer}`)).data.customer as unknown as Stats).stats.ordersCount;
+    const id = (await call("vendedor1", "POST", "/api/orders", { customerId: ownCustomer, items: [{ productId: productB, qty: 2 }], confirm: true })).data.order.id;
+    const withOrder = await count();
+    assert.equal((await call("vendedor1", "POST", `/api/orders/${id}/status`, { status: "cancelado" })).status, 422);
+    assert.equal((await call("vendedor1", "POST", `/api/orders/${id}/status`, { status: "cancelado", reason: "Sin stock" })).status, 200);
+    assert.equal(await count(), withOrder - 1);
+  });
+
+  test("el primer pedido de un lead lo convierte en cliente", async () => {
+    await call("admin", "PUT", "/api/settings/assignment", { ...ASSIGNMENT_ON, autoAssign: false });
+    try {
+      const sim = await upload("admin", "/api/demo/inbound", { phone: randomPhone(), name: "Lead Pedido", text: "Quiero comprar" });
+      await call("admin", "POST", `/api/conversations/${sim.data.conversationId}/assign`, { assigneeId: uids.vendedor1 });
+      const conv = (await call("vendedor1", "GET", `/api/conversations/${sim.data.conversationId}`)).data.conversation;
+      const r = await call("vendedor1", "POST", "/api/orders", {
+        customerId: conv.customerId,
+        items: [{ productId: productA, qty: 1 }],
+        confirm: true,
+        conversationId: conv.id,
+        leadId: conv.leadId,
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      assert.equal((await call("vendedor1", "GET", `/api/customers/${conv.customerId}`)).data.customer.stage, "cliente_nuevo");
+    } finally {
+      await call("admin", "PUT", "/api/settings/assignment", ASSIGNMENT_ON);
+    }
   });
 });
 

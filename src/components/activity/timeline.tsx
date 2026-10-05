@@ -1,5 +1,5 @@
-import type { Activity, ConversationStatus, CustomerStage, LeadStatus } from "@/types/model";
-import { CONVERSATION_STATUS_LABELS, CUSTOMER_STAGE_LABELS, LEAD_STATUS_LABELS } from "@/types/model";
+import type { Activity, ConversationStatus, CustomerStage, LeadStatus, OrderStatus } from "@/types/model";
+import { CONVERSATION_STATUS_LABELS, CUSTOMER_STAGE_LABELS, LEAD_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/types/model";
 
 /** Nombres legibles de los campos que aparecen en el historial de cambios. */
 const FIELD_LABELS: Record<string, string> = {
@@ -18,6 +18,14 @@ const FIELD_LABELS: Record<string, string> = {
   assigneeId: "Atiende",
   teamId: "Equipo",
   leadStatus: "Lead",
+  orderStatus: "Pedido",
+  pipelineStage: "Etapa del pipeline",
+  estimatedValue: "Valor estimado",
+  product: "Producto",
+  expectedCloseAt: "Cierre estimado",
+  probability: "Probabilidad",
+  nextAction: "Próxima acción",
+  notes: "Notas",
   status: "Estado",
   priority: "Prioridad",
   stage: "Etapa",
@@ -37,6 +45,9 @@ function formatValue(field: string, value: unknown, l: TimelineLookups): string 
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Sí" : "No";
   if (field === "ownerId" || field === "assigneeId") return l.members.get(String(value)) ?? "usuario eliminado";
+  if (field === "orderStatus") return ORDER_STATUS_LABELS[value as OrderStatus] ?? String(value);
+  if (field === "expectedCloseAt" && typeof value === "number") return new Date(value).toLocaleDateString("es-AR");
+  if (field === "probability") return `${value}%`;
   if (field === "leadStatus") return LEAD_STATUS_LABELS[value as LeadStatus] ?? String(value);
   if (field === "teamId") return l.teams?.get(String(value)) ?? "equipo eliminado";
   if (field === "status") return CONVERSATION_STATUS_LABELS[value as ConversationStatus] ?? String(value);

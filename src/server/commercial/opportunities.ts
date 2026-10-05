@@ -180,5 +180,10 @@ export async function updateOpportunity(session: Session, id: string, input: Upd
     }
     effects.write(leadTo ? { to: leadTo, lostReason: input.lostReason } : null, now, { opportunityId: id });
   });
-  return { ...current, ...patch, updatedAt: now } as Opportunity;
+  return {
+    ...current,
+    ...patch,
+    ...(to ? { closedAt: closing ? now : undefined, lostReason: to.kind === "perdida" ? input.lostReason : undefined } : {}),
+    updatedAt: now,
+  } as Opportunity;
 }

@@ -100,7 +100,7 @@ const CUSTOMERS: [string, string, string, string, string, string, string | null,
 async function seedCustomers(db: Firestore, uids: Record<string, string>) {
   const col = db.collection(`organizations/${ORG_ID}/customers`);
   // Reinicio: se borran los datos comerciales demo anteriores (solo en la org demo).
-  for (const name of ["customers", "activities", "notes", "contacts", "conversations", "leads", "assignments"]) {
+  for (const name of ["customers", "activities", "notes", "contacts", "conversations", "leads", "assignments", "opportunities", "orders", "products", "outbox"]) {
     const old = await db.collection(`organizations/${ORG_ID}/${name}`).get();
     if (name === "conversations") {
       for (const c of old.docs) {
@@ -234,6 +234,56 @@ async function seedConversations(db: Firestore, uids: Record<string, string>) {
   await db.doc(`organizations/${ORG_ID}/conversations/${cerrada.conversationId}`).update({ status: "cerrada", closedAt: now - 60 * 25 * 60_000 });
 }
 
+/** Catálogo de una distribuidora avícola y oportunidades abiertas de ejemplo. */
+async function seedCatalogAndPipeline(db: Firestore, uids: Record<string, string>) {
+  const now = Date.now();
+  const base = { orgId: ORG_ID, isDemo: true, createdAt: now, createdBy: "system", updatedAt: now, updatedBy: "system" };
+  const batch = db.batch();
+  const PRODUCTS: [string, string, string, number][] = [
+    ["POL-ENT", "Pollo entero", "kg", 3200],
+    ["PEC", "Pechuga sin hueso", "kg", 6900],
+    ["ALI", "Alitas", "kg", 2900],
+    ["MUS", "Muslo", "kg", 3600],
+    ["PAT", "Pata y muslo", "kg", 3400],
+    ["MIL", "Milanesa de pollo", "kg", 7800],
+    ["HAM", "Hamburguesa de pollo x 4", "caja", 4200],
+    ["HUE", "Huevos blancos x 30", "maple", 5600],
+    ["CAJ-POL", "Pollo entero cajón x 10", "cajón", 30500],
+  ];
+  for (const [sku, name, unit, price] of PRODUCTS) {
+    const ref = db.collection(`organizations/${ORG_ID}/products`).doc(sku.toLowerCase());
+    batch.set(ref, { ...base, id: ref.id, sku, name, unit, price, active: true });
+  }
+  batch.set(db.doc(`organizations/${ORG_ID}/settings/counters`), { orders: 0 });
+
+  const OPPS: [string, string, string, string, number, string, string, number][] = [
+    // cliente, nombre, responsable, etapa, valor, producto, próxima acción, días en la etapa
+    ["demo-cliente-1", "José Fernández", "vendedor1", "negociacion", 250000, "Pedido semanal de pechuga y alitas", "Confirmar precio por volumen el jueves", 2],
+    ["demo-cliente-3", "Ricardo Sosa", "vendedor1", "contactado", 120000, "Milanesas para la parrilla", "Llevar muestras", 9],
+    ["demo-cliente-6", "Carolina Vega", "vendedor2", "cotizacion", 480000, "Cajones de pollo entero mensual", "Enviar cotización mayorista", 1],
+    ["demo-cliente-9", "Hernán Ruiz", "vendedor2", "interesado", 90000, "Alitas para el bar", "Llamar el lunes", 4],
+  ];
+  const stages: Record<string, number> = { contactado: 20, interesado: 35, cotizacion: 50, negociacion: 65 };
+  for (const [customerId, customerName, owner, stageId, value, product, nextAction, days] of OPPS) {
+    const ref = db.collection(`organizations/${ORG_ID}/opportunities`).doc();
+    batch.set(ref, {
+      ...base,
+      id: ref.id,
+      customerId,
+      customerName,
+      ownerId: uids[owner],
+      pipelineId: "principal",
+      stageId,
+      estimatedValue: value,
+      product,
+      probability: stages[stageId],
+      nextAction,
+      stageChangedAt: now - days * 86_400_000,
+    });
+  }
+  await batch.commit();
+}
+
 const { auth, db } = initAdmin();
 console.log(`Destino: ${isEmulator() ? "EMULADOR" : `proyecto ${process.env.FIREBASE_PROJECT_ID}`}`);
 
@@ -268,6 +318,7 @@ await seedZonesAndTeam(db, uids);
 await seedNotifications(db, uids);
 await seedCustomers(db, uids);
 await seedConversations(db, uids);
+await seedCatalogAndPipeline(db, uids);
 
 console.log(`Demo listo: "${ORG_NAME}" (${ORG_ID})`);
 for (const u of USERS) console.log(`  ${u.role.padEnd(13)} ${u.email}`);

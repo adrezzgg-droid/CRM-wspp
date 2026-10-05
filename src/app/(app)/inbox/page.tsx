@@ -5,6 +5,8 @@ import { scopeAllows } from "@/server/permissions/scope";
 import { getMembers, getTags, getTeams, OWNER_ROLES, scopeContext } from "@/server/org/data";
 import { getAssignmentSettings } from "@/server/org/assignment";
 import { customerFormOptions } from "@/server/customers/options";
+import { getPipeline } from "@/server/commercial/common";
+import { listProducts } from "@/server/commercial/products";
 import { InboxApp } from "./inbox-app";
 
 export const metadata: Metadata = { title: "Bandeja" };
@@ -19,6 +21,13 @@ export default async function InboxPage() {
     getAssignmentSettings(session.orgId),
   ]);
   const myTeams = teams.filter((t) => t.leaderIds.includes(session.uid));
+  const canCreateOpp = can(session.role, "pipeline", "crear", session.overrides);
+  const canCreateOrder = session.role !== "repartidor" && can(session.role, "pedidos", "crear", session.overrides);
+  const pipelineCtx = canCreateOpp ? await scopeContext(session, "pipeline") : null;
+  const [pipeline, products] = await Promise.all([
+    canCreateOpp ? getPipeline(session.orgId) : null,
+    canCreateOrder ? listProducts(session) : null,
+  ]);
   const canAssign = can(session.role, "inbox", "asignar", session.overrides);
   const canEditCustomer = can(session.role, "clientes", "editar", session.overrides);
 
@@ -47,6 +56,20 @@ export default async function InboxPage() {
       canAssign={canAssign}
       customerOptions={canEditCustomer ? await customerFormOptions(session) : null}
       canEditCustomer={canEditCustomer}
+      currency={session.org.currency}
+      opportunityOptions={
+        pipeline && pipelineCtx
+          ? {
+              stages: pipeline.stages,
+              currency: session.org.currency,
+              owners:
+                pipelineCtx.scope === "propio"
+                  ? []
+                  : members.filter((m) => m.active && OWNER_ROLES.has(m.role) && scopeAllows(pipelineCtx, m.id)).map((m) => ({ id: m.id, name: m.displayName })),
+            }
+          : null
+      }
+      orderProducts={products ? products.map((x) => ({ id: x.id, name: x.name, sku: x.sku, unit: x.unit, price: x.price })) : null}
     />
   );
 }

@@ -7,6 +7,35 @@ import type { Contact, Customer } from "@/types/model";
 import { api, ApiClientError, errorMessage } from "@/lib/api-client";
 import { Alert, Button, Field, inputClass, Modal } from "@/components/ui/controls";
 import { CustomerFormModal, type CustomerFormOptions } from "../customer-form";
+import { OpportunityFormModal, type OpportunityFormOptions } from "@/components/commercial/opportunity-form";
+import type { ProductOption } from "@/components/commercial/order-form";
+import { NewOrderButton } from "../../pedidos/order-actions";
+
+/** Nueva oportunidad / nuevo pedido para este cliente. */
+export function CommercialActions({
+  customer,
+  opportunityOptions,
+  products,
+  currency,
+}: {
+  customer: { id: string; name: string; company?: string; address?: string };
+  opportunityOptions: OpportunityFormOptions | null;
+  products: ProductOption[] | null;
+  currency: string;
+}) {
+  const [creating, setCreating] = useState(false);
+  return (
+    <>
+      {opportunityOptions && (
+        <Button variant="secondary" onClick={() => setCreating(true)}>
+          <Plus className="size-4" aria-hidden /> Oportunidad
+        </Button>
+      )}
+      {products && <NewOrderButton variant="secondary" label="Pedido" products={products} currency={currency} customer={customer} />}
+      {creating && opportunityOptions && <OpportunityFormModal open onClose={() => setCreating(false)} options={opportunityOptions} customer={customer} />}
+    </>
+  );
+}
 
 export function CustomerActions({
   customer,

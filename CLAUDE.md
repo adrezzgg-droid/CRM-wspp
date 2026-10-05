@@ -33,19 +33,20 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - Solo un usuario con rol `admin` crea/modifica admins y cambia los permisos por rol (evita escalada de privilegios).
 - Clientes: `ownerId` es `null` (no ausente) si no tiene responsable; `whatsappId` es único por organización; `searchKeywords` se recalcula en cada escritura (`src/lib/search.ts`).
 - Valores compartidos entre Server y Client Components no pueden vivir en un módulo `"use client"` (ver `components/ui/styles.ts`).
-- Si el dev server da 404 en rutas nuevas, borrar `.next/dev` (caché de Turbopack).
+- Si el dev server da 404 en rutas nuevas, borrar `.next/dev` (caché de Turbopack). Tras horas de recargas en caliente se pone lento (>1 GB): reiniciarlo antes de correr `test:api`.
 - **Mensajes entrantes: una sola puerta.** Todo entra por `ingestInbound` (`src/server/inbox/ingest-core.ts`), que es pura respecto de Next (recibe el Firestore) y la usan el simulador demo, el seed y, en la Fase 9, el webhook. El simulador arma el JSON exacto de Meta (`buildInboundPayload`) y lo pasa por `parseWebhook`. No escribir conversaciones/mensajes entrantes a mano.
 - Conversación: una por número y cuenta (`${accountId}_${waId}`); cerrarla y que el cliente escriba la reabre. Mensaje entrante/saliente: id = `wamid` (idempotencia y estados). `contactName` y `customerStage` están copiados en la conversación y se sincronizan al editar el cliente.
 - Salida: `senderFor(org)` (`src/server/inbox/sender.ts`). Demo nunca llama a Meta; real lanza 503 hasta la Fase 9. Fuera de la ventana de 24 h solo notas internas (plantillas en Fase 7).
 - Adjuntos: Storage es solo del servidor (`storage.rules` niega todo); el navegador los pide a `/api/conversations/{id}/messages/{msgId}/media`, que verifica alcance.
 - Asignación: la decide `ingestInbound` en la misma transacción (responsable activo → dueño del cliente → reglas de `settings/assignment`: zona y turno rotativo por `member.lastAutoAssignedAt`). La lógica pura está en `src/lib/assignment.ts`. El lead nunca retrocede por eventos automáticos (`advanceLead`) y guarda la fecha de cada paso en `statusAt`.
 - Demoras: `awaitingSince` = primer mensaje sin respuesta; `runSlaCheck` (`src/server/inbox/sla-core.ts`) avisa una vez por espera. Lo dispara `/api/cron/sla` (Bearer CRON_SECRET, cada 5 min en `vercel.json`) o el botón de Configuración → Asignación.
+- Pipeline/pedidos (`src/server/commercial/`): los efectos sobre lead y cliente van por `readCommercialEffects` (lee todo antes de escribir, como exigen las transacciones). Pedido: número correlativo en `settings/counters` (transacción), transiciones por actor en `src/lib/orders.ts`, `counted` evita sumar dos veces a las estadísticas del cliente; al confirmar se encola en `outbox` solo para conectores habilitados en `settings/integrations`. El repartidor ve un pedido solo si `driverId` es él.
 - Bandeja en tiempo real desde el navegador: las consultas salen de `inboxQuery()` (`src/lib/inbox-filters.ts`) y el vendedor SIEMPRE filtra `assigneeId == uid` (las reglas no son filtros).
 
 ## Comandos
 
 - `npm run emulators` — Auth + Firestore + Storage locales (proyecto `demo-crm-whatsapp`, no requiere cuenta).
-- `npm run seed:demo` — reinicia la organización demo: un usuario por rol, 12 clientes y conversaciones de ejemplo (entran por la ingestión real). Contraseña en `scripts/seed-demo.ts`, solo emulador.
+- `npm run seed:demo` — reinicia la organización demo: un usuario por rol, 12 clientes, conversaciones, catálogo y oportunidades de ejemplo (entran por la ingestión real). Contraseña en `scripts/seed-demo.ts`, solo emulador.
 - `npm run org:crear -- --nombre "..." --admin-email ... --admin-nombre "..."` — organización real.
 - `npm run dev` · `npm run check` (typecheck + lint + test + build).
 - `npm run test:emulador` (alias `test:rules`) — reglas + ingestión contra el emulador (con los emuladores de desarrollo APAGADOS: usa los mismos puertos).
@@ -65,12 +66,18 @@ bandeja en tiempo real con 9 filtros, chat tipo WhatsApp, respuesta/nota interna
 asignación manual con trazabilidad, estado/prioridad/etiquetas, ABM de etiquetas, desplegable de notificaciones,
 simulador demo.
 
-Fase 4 cerrada (pendiente de confirmación del dueño para pasar a la Fase 5):
+Fase 4 cerrada:
 asignación automática (dueño del cliente, zona, turno rotativo, reasignación si el vendedor fue dado de baja),
 asignación manual a persona y/o equipo, disponibilidad de cada vendedor, ABM de zonas con sus vendedores,
 reglas configurables, alerta de demora (cron + manual) con indicador en la bandeja, recorrido del lead con
 fechas (bandeja y ficha) y conversión prospecto → cliente nuevo al registrar la venta.
-Pruebas: 79 unitarias, 46 de emulador (reglas + ingestión + asignación + demoras), 32 de API.
+
+Fase 5 cerrada (pendiente de confirmación del dueño para pasar a la Fase 6):
+pipeline Kanban (arrastrar y soltar + "Mover a…", totales y ponderado, estancadas, perdida con motivo, efectos
+sobre el lead y conversión del prospecto), catálogo de productos, pedidos (alta desde lista/ficha/bandeja,
+numeración correlativa, borrador/confirmado/preparación/reparto/entregado/cancelado por rol, repartidor,
+estadísticas del cliente, cola del conector), "Mis entregas" del repartidor.
+Pruebas: 85 unitarias, 46 de emulador, 38 de API.
 
 Cambios sobre lo heredado: `Order.driverId`; marca de lectura de notificaciones exige booleano; el supervisor
 tiene `asignar` sobre clientes (equipo); notas, contactos y actividades ya no son legibles por el vendedor desde

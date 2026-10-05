@@ -14,7 +14,12 @@ import { PageBody } from "@/components/ui/page";
 import { Badge, StageBadge, TagChip } from "@/components/ui/badges";
 import { ActivityTimeline } from "@/components/activity/timeline";
 import { LeadTrace } from "@/components/leads/lead-trace";
-import { ContactsPanel, CustomerActions, NoteForm } from "./customer-panels";
+import { CommercialActions, ContactsPanel, CustomerActions, NoteForm } from "./customer-panels";
+import { getPipeline } from "@/server/commercial/common";
+import { listProducts } from "@/server/commercial/products";
+import { scopeAllows } from "@/server/permissions/scope";
+import { getMembers, OWNER_ROLES, scopeContext } from "@/server/org/data";
+import { OrderStatusBadge } from "@/components/ui/order-badge";
 
 export const metadata: Metadata = { title: "Cliente" };
 
@@ -67,6 +72,15 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
   const canEdit = can(session.role, "clientes", "editar", session.overrides);
   const canNote = can(session.role, "clientes", "crear", session.overrides);
   const nextTask = tasks[0];
+  const canOpp = can(session.role, "pipeline", "crear", session.overrides);
+  const canOrder = session.role !== "repartidor" && can(session.role, "pedidos", "crear", session.overrides);
+  const [pipeline, products, pipelineCtx, allMembers] = await Promise.all([
+    getPipeline(session.orgId),
+    canOrder ? listProducts(session) : null,
+    scopeContext(session, "pipeline"),
+    getMembers(session.orgId),
+  ]);
+  const stageName = new Map(pipeline.stages.map((s) => [s.id, s]));
   const nextOpportunity = opportunities.find((o) => o.nextAction);
 
   const facts: [string, React.ReactNode][] = [
@@ -121,12 +135,30 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
             </div>
           </div>
         </div>
+        <div className="flex flex-wrap gap-2">
+          {!c.archived && (
+            <CommercialActions
+              customer={{ id: c.id, name: c.name, company: c.company, address: c.address }}
+              currency={session.org.currency}
+              products={products ? products.map((x) => ({ id: x.id, name: x.name, sku: x.sku, unit: x.unit, price: x.price })) : null}
+              opportunityOptions={
+                canOpp
+                  ? {
+                      stages: pipeline.stages,
+                      currency: session.org.currency,
+                      owners: pipelineCtx.scope === "propio" ? [] : allMembers.filter((m) => m.active && OWNER_ROLES.has(m.role) && scopeAllows(pipelineCtx, m.id)).map((m) => ({ id: m.id, name: m.displayName })),
+                    }
+                  : null
+              }
+            />
+          )}
         <CustomerActions
           customer={c}
           options={options}
           canEdit={canEdit}
           canArchive={can(session.role, "clientes", "eliminar", session.overrides)}
         />
+        </div>
       </header>
 
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -239,9 +271,14 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
             ) : (
               <ul className="divide-y divide-line text-sm">
                 {orders.map((o) => (
-                  <li key={o.id} className="flex justify-between gap-2 py-1.5">
-                    <span>#{o.number} · {o.status}</span>
-                    <span className="font-medium">{money.format(o.total)}</span>
+                  <li key={o.id}>
+                    <Link href={`/pedidos/${o.id}`} className="-mx-2 flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-canvas">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="font-mono text-xs">{o.number}</span>
+                        <OrderStatusBadge status={o.status} />
+                      </span>
+                      <span className="font-medium">{money.format(o.total)}</span>
+                    </Link>
                   </li>
                 ))}
               </ul>
@@ -269,9 +306,14 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
             ) : (
               <ul className="space-y-1.5 text-sm">
                 {opportunities.map((o) => (
-                  <li key={o.id} className="flex justify-between gap-2">
-                    <span className="truncate">{o.product ?? "Oportunidad"}</span>
-                    <span className="font-medium">{money.format(o.estimatedValue)}</span>
+                  <li key={o.id}>
+                    <Link href="/pipeline" className="-mx-2 flex justify-between gap-2 rounded-lg px-2 py-1 hover:bg-canvas">
+                      <span className="min-w-0">
+                        <span className="block truncate">{o.product ?? "Oportunidad"}</span>
+                        <span className="text-xs text-ink-muted">{stageName.get(o.stageId)?.name ?? o.stageId} · {o.probability}%</span>
+                      </span>
+                      <span className="font-medium">{money.format(o.estimatedValue)}</span>
+                    </Link>
                   </li>
                 ))}
               </ul>

@@ -16,6 +16,8 @@ import { Alert, Button, CheckboxGroup } from "@/components/ui/controls";
 import { inputClass } from "@/components/ui/styles";
 import { StageBadge, TagChip } from "@/components/ui/badges";
 import { CustomerFormModal } from "../clientes/customer-form";
+import { OpportunityFormModal } from "@/components/commercial/opportunity-form";
+import { NewOrderButton } from "../pedidos/order-actions";
 import type { InboxProps } from "./types";
 
 type CustomerState = { status: "loading" } | { status: "ok"; customer: Customer } | { status: "hidden" } | { status: "error"; message: string };
@@ -38,6 +40,7 @@ export function ConversationPanel({
   const [lead, setLead] = useState<Lead | null>(null);
   const [reload, setReload] = useState(0);
   const [editing, setEditing] = useState(false);
+  const [creatingOpp, setCreatingOpp] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -249,12 +252,40 @@ export function ConversationPanel({
         )}
 
         <section className="space-y-2 border-t border-line pt-4">
-          <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Próximamente</h3>
+          <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Acciones</h3>
+          {customer.status === "ok" && !customer.customer.archived ? (
+            <div className="flex flex-col gap-2">
+              {props.opportunityOptions && (
+                <Button variant="secondary" className="w-full justify-start" onClick={() => setCreatingOpp(true)}>
+                  Crear oportunidad
+                </Button>
+              )}
+              {props.orderProducts && (
+                <NewOrderButton
+                  variant="secondary"
+                  label="Crear pedido"
+                  className="w-full justify-start"
+                  products={props.orderProducts}
+                  currency={props.currency}
+                  customer={{ id: customer.customer.id, name: customer.customer.name, company: customer.customer.company, address: customer.customer.address }}
+                  context={{ conversationId: c.id, leadId: c.leadId }}
+                />
+              )}
+              {creatingOpp && props.opportunityOptions && (
+                <OpportunityFormModal
+                  open
+                  onClose={() => setCreatingOpp(false)}
+                  options={props.opportunityOptions}
+                  customer={{ id: customer.customer.id, name: customer.customer.name }}
+                  context={{ conversationId: c.id, leadId: c.leadId }}
+                />
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-ink-muted">Para crear oportunidades o pedidos, el cliente tiene que estar a tu cargo.</p>
+          )}
           <Button variant="ghost" disabled className="w-full justify-start" title="Se habilita en la Fase 6">
             Crear tarea · Fase 6
-          </Button>
-          <Button variant="ghost" disabled className="w-full justify-start" title="Se habilita en la Fase 5">
-            Crear oportunidad o pedido · Fase 5
           </Button>
         </section>
       </div>
