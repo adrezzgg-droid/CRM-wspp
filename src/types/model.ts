@@ -326,7 +326,10 @@ export interface Pipeline extends Audited, TenantScoped {
 export interface Opportunity extends Audited, TenantScoped {
   id: Id;
   customerId: Id;
+  /** Nombre del cliente, copiado para mostrar el tablero sin otra lectura. */
+  customerName: string;
   leadId?: Id;
+  conversationId?: Id;
   ownerId: Id;
   pipelineId: Id;
   stageId: Id;
@@ -336,6 +339,11 @@ export interface Opportunity extends Audited, TenantScoped {
   probability: number;
   nextAction?: string;
   notes?: string;
+  /** Fecha en que entró a la etapa actual (antigüedad en la columna). */
+  stageChangedAt: Timestamp;
+  /** Ganada o perdida: fecha de cierre. */
+  closedAt?: Timestamp;
+  lostReason?: string;
 }
 
 export interface OrderItem {
@@ -361,6 +369,7 @@ export interface Order extends Audited, TenantScoped {
   id: Id;
   number: string; // legible, correlativo por organización
   customerId: Id;
+  customerName: string;
   sellerId: Id;
   /** Repartidor asignado. Es lo que habilita al rol repartidor a ver el pedido. */
   driverId?: Id;
@@ -369,9 +378,27 @@ export interface Order extends Audited, TenantScoped {
   opportunityId?: Id;
   items: OrderItem[];
   total: number;
+  currency: string;
   status: OrderStatus;
+  /** Cuándo pasó por cada estado. */
+  statusAt: Partial<Record<OrderStatus, Timestamp>>;
+  deliveryAddress?: string;
+  deliveryDate?: Timestamp;
+  notes?: string;
+  cancelReason?: string;
+  /** Ya sumó a las estadísticas del cliente (se descuenta si se cancela). */
+  counted: boolean;
   deliveryRef?: { system: string; externalId: string; status?: string };
 }
+
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  borrador: "Borrador",
+  confirmado: "Confirmado",
+  en_preparacion: "En preparación",
+  en_reparto: "En reparto",
+  entregado: "Entregado",
+  cancelado: "Cancelado",
+};
 
 export interface Product extends Audited, TenantScoped {
   id: Id;
@@ -419,6 +446,7 @@ export interface Activity extends TenantScoped {
   customerId?: Id;
   conversationId?: Id;
   leadId?: Id;
+  opportunityId?: Id;
   orderId?: Id;
   actorId: Id | "system" | "webhook" | "customer";
   summary: string;

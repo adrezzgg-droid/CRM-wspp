@@ -240,3 +240,88 @@ export const zoneInput = z.object({
 });
 
 export const availabilityInput = z.object({ available: z.boolean() });
+
+// ───────────────────────────── Pipeline ─────────────────────────────────────
+
+const money = z.coerce.number().min(0, "No puede ser negativo").max(1_000_000_000, "Importe demasiado alto");
+const dateMs = z.coerce.number().int().min(0).max(4_102_444_800_000);
+
+const opportunityFields = z.object({
+  customerId: id,
+  ownerId: id,
+  stageId: id,
+  estimatedValue: money,
+  product: optionalText(120, "Producto"),
+  expectedCloseAt: dateMs.nullable(),
+  probability: z.coerce.number().int().min(0).max(100),
+  nextAction: optionalText(200, "Próxima acción"),
+  notes: optionalText(2000, "Notas"),
+  lostReason: optionalText(200, "Motivo"),
+  conversationId: id,
+  leadId: id,
+});
+
+/** Alta: cliente obligatorio; el resto tiene valores por defecto. */
+export const opportunityInput = opportunityFields.partial().extend({
+  customerId: id,
+  estimatedValue: money.default(0),
+});
+
+/** Edición y movimiento de etapa (arrastrar en el tablero). */
+export const opportunityUpdate = opportunityFields.omit({ customerId: true, conversationId: true, leadId: true }).partial();
+
+// ───────────────────────────── Productos ────────────────────────────────────
+
+export const productInput = z.object({
+  name: text(120, "Nombre").min(2, "El nombre es obligatorio"),
+  sku: optionalText(40, "Código"),
+  unit: text(20, "Unidad").min(1, "Indicá la unidad (kg, unidad, caja…)"),
+  price: money,
+  active: z.boolean().default(true),
+});
+
+export const productListQuery = z.object({
+  q: z.string().trim().max(80).optional(),
+  inactivos: z.enum(["1"]).optional(),
+});
+
+// ───────────────────────────── Pedidos ──────────────────────────────────────
+
+export const ORDER_STATUSES = ["borrador", "confirmado", "en_preparacion", "en_reparto", "entregado", "cancelado"] as const;
+
+export const orderItemInput = z.object({
+  productId: id,
+  qty: z.coerce.number().positive("La cantidad tiene que ser mayor a 0").max(100_000),
+  /** Si no viene, se usa el precio de lista del producto. */
+  unitPrice: money.optional(),
+});
+
+export const orderInput = z.object({
+  customerId: id,
+  items: z.array(orderItemInput).min(1, "Agregá al menos un producto").max(100),
+  notes: optionalText(1000, "Notas"),
+  deliveryAddress: optionalText(200, "Dirección de entrega"),
+  deliveryDate: dateMs.optional(),
+  conversationId: id.optional(),
+  leadId: id.optional(),
+  opportunityId: id.optional(),
+  /** true = se crea confirmado (si no, queda en borrador). */
+  confirm: z.boolean().default(false),
+});
+
+export const orderStatusInput = z
+  .object({
+    status: z.enum(ORDER_STATUSES),
+    reason: optionalText(200, "Motivo"),
+  })
+  .refine((v) => v.status !== "cancelado" || !!v.reason, { message: "Indicá el motivo de la cancelación", path: ["reason"] });
+
+export const orderDriverInput = z.object({ driverId: id.nullable() });
+
+export const orderListQuery = z.object({
+  status: z.enum(ORDER_STATUSES).optional(),
+  vendedor: id.optional(),
+  repartidor: id.optional(),
+  cursor: id.optional(),
+});
+export type OrderListQuery = z.infer<typeof orderListQuery>;
