@@ -7,12 +7,13 @@ import { ApiError } from "@/server/api/handler";
 import { can } from "@/server/permissions/matrix";
 import { getCustomer360, type Customer360 } from "@/server/customers/service";
 import { customerFormOptions } from "@/server/customers/options";
-import { getMembersMap, getTags, getZones } from "@/server/org/data";
+import { getMembersMap, getTags, getTeams, getZones } from "@/server/org/data";
 import { formatWhatsappId } from "@/lib/phone";
 import { CONVERSATION_STATUS_LABELS } from "@/types/model";
 import { PageBody } from "@/components/ui/page";
 import { Badge, StageBadge, TagChip } from "@/components/ui/badges";
 import { ActivityTimeline } from "@/components/activity/timeline";
+import { LeadTrace } from "@/components/leads/lead-trace";
 import { ContactsPanel, CustomerActions, NoteForm } from "./customer-panels";
 
 export const metadata: Metadata = { title: "Cliente" };
@@ -44,13 +45,14 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
     if (error instanceof ApiError && error.status === 404) notFound();
     throw error;
   }
-  const [options, members, tags, zones] = await Promise.all([
+  const [options, members, tags, zones, teams] = await Promise.all([
     customerFormOptions(session),
     getMembersMap(session.orgId),
     getTags(session.orgId),
     getZones(session.orgId),
+    getTeams(session.orgId),
   ]);
-  const { customer: c, contacts, notes, activities, conversations, orders, tasks, opportunities } = data;
+  const { customer: c, contacts, notes, activities, conversations, orders, tasks, opportunities, leads } = data;
   const tz = session.org.timezone;
   const money = new Intl.NumberFormat("es-AR", { style: "currency", currency: session.org.currency, maximumFractionDigits: 0 });
   const date = new Intl.DateTimeFormat("es-AR", { dateStyle: "medium", timeZone: tz });
@@ -60,6 +62,7 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
     members: new Map([...members.values()].map((m) => [m.id, m.displayName])),
     tags: new Map(tags.map((t) => [t.id, t.name])),
     zones: new Map(zones.map((z) => [z.id, z.name])),
+    teams: new Map(teams.map((t) => [t.id, t.name])),
   };
   const canEdit = can(session.role, "clientes", "editar", session.overrides);
   const canNote = can(session.role, "clientes", "crear", session.overrides);
@@ -152,6 +155,19 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
               <Empty>No hay acciones pendientes. Las tareas de seguimiento llegan en la Fase 6.</Empty>
             )}
           </Section>
+
+          {leads.length > 0 && (
+            <Section title={leads.length > 1 ? "Leads" : "Recorrido del lead"}>
+              <div className="space-y-5">
+                {leads.map((l) => (
+                  <div key={l.id} className="space-y-2">
+                    {leads.length > 1 && <p className="text-xs text-ink-muted">Lead del {date.format(l.createdAt)} · {l.source}</p>}
+                    <LeadTrace lead={l} timezone={tz} canEdit={can(session.role, "inbox", "editar", session.overrides)} />
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
 
           <Section title="Notas internas">
             <div className="space-y-4">

@@ -38,6 +38,8 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - Conversación: una por número y cuenta (`${accountId}_${waId}`); cerrarla y que el cliente escriba la reabre. Mensaje entrante/saliente: id = `wamid` (idempotencia y estados). `contactName` y `customerStage` están copiados en la conversación y se sincronizan al editar el cliente.
 - Salida: `senderFor(org)` (`src/server/inbox/sender.ts`). Demo nunca llama a Meta; real lanza 503 hasta la Fase 9. Fuera de la ventana de 24 h solo notas internas (plantillas en Fase 7).
 - Adjuntos: Storage es solo del servidor (`storage.rules` niega todo); el navegador los pide a `/api/conversations/{id}/messages/{msgId}/media`, que verifica alcance.
+- Asignación: la decide `ingestInbound` en la misma transacción (responsable activo → dueño del cliente → reglas de `settings/assignment`: zona y turno rotativo por `member.lastAutoAssignedAt`). La lógica pura está en `src/lib/assignment.ts`. El lead nunca retrocede por eventos automáticos (`advanceLead`) y guarda la fecha de cada paso en `statusAt`.
+- Demoras: `awaitingSince` = primer mensaje sin respuesta; `runSlaCheck` (`src/server/inbox/sla-core.ts`) avisa una vez por espera. Lo dispara `/api/cron/sla` (Bearer CRON_SECRET, cada 5 min en `vercel.json`) o el botón de Configuración → Asignación.
 - Bandeja en tiempo real desde el navegador: las consultas salen de `inboxQuery()` (`src/lib/inbox-filters.ts`) y el vendedor SIEMPRE filtra `assigneeId == uid` (las reglas no son filtros).
 
 ## Comandos
@@ -57,11 +59,18 @@ guards, layout responsive con sidebar por permisos, banner DEMO, notificaciones 
 Fase 2 cerrada: clientes (listado, alta/edición, baja lógica, ficha 360°, notas, contactos, historial),
 usuarios, roles y permisos por empresa, equipos, empresa y configuración general.
 
-Fase 3 cerrada (pendiente de confirmación del dueño para pasar a la Fase 4):
+Fase 3 cerrada:
 parser del webhook de Meta (todos los tipos), ingestión idempotente (cliente+lead+conversación+avisos),
 bandeja en tiempo real con 9 filtros, chat tipo WhatsApp, respuesta/nota interna/adjuntos, ventana de 24 h,
 asignación manual con trazabilidad, estado/prioridad/etiquetas, ABM de etiquetas, desplegable de notificaciones,
-simulador demo. Pruebas: 73 unitarias, 40 de emulador (reglas + ingestión), 25 de API.
+simulador demo.
+
+Fase 4 cerrada (pendiente de confirmación del dueño para pasar a la Fase 5):
+asignación automática (dueño del cliente, zona, turno rotativo, reasignación si el vendedor fue dado de baja),
+asignación manual a persona y/o equipo, disponibilidad de cada vendedor, ABM de zonas con sus vendedores,
+reglas configurables, alerta de demora (cron + manual) con indicador en la bandeja, recorrido del lead con
+fechas (bandeja y ficha) y conversión prospecto → cliente nuevo al registrar la venta.
+Pruebas: 79 unitarias, 46 de emulador (reglas + ingestión + asignación + demoras), 32 de API.
 
 Cambios sobre lo heredado: `Order.driverId`; marca de lectura de notificaciones exige booleano; el supervisor
 tiene `asignar` sobre clientes (equipo); notas, contactos y actividades ya no son legibles por el vendedor desde

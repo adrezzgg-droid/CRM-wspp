@@ -8,7 +8,7 @@ import { ApiError } from "@/server/api/handler";
 import { recordAuditIn } from "@/server/audit";
 import { can, type Action } from "@/server/permissions/matrix";
 import type { Session } from "@/server/auth/session";
-import { getMembers, getTeams, getZones } from "@/server/org/data";
+import { getMembers, getTeams, getZones, OWNER_ROLES } from "@/server/org/data";
 import { newMember } from "@/server/org/defaults";
 import type { memberCreate, memberUpdate, teamInput } from "@/lib/schemas";
 import { checkCreate, checkEdit, checkRoleChange, checkStatusChange } from "./guards";
@@ -324,5 +324,24 @@ export async function deleteTeam(session: Session, id: string) {
     target: { collection: "teams", id },
     before: { name: current.name, leaderIds: current.leaderIds, memberIds: current.memberIds },
   });
+  await batch.commit();
+}
+
+/** Cada vendedor decide si recibe leads automáticos (p.ej. al salir a reparto o fuera de turno). */
+export async function setOwnAvailability(session: Session, available: boolean) {
+  if (!OWNER_ROLES.has(session.role)) throw new ApiError(403, "Tu rol no recibe conversaciones");
+  if (session.member.available === available) return;
+  const now = Date.now();
+  const batch = adminDb().batch();
+  batch.update(col(session.orgId, "members").doc(session.uid), { available, updatedAt: now, updatedBy: session.uid });
+  recordAuditIn(batch, {
+    orgId: session.orgId,
+    isDemo: session.org.isDemo,
+    actorId: session.uid,
+    action: "member.availability",
+    target: { collection: "members", id: session.uid },
+    before: { available: session.member.available },
+    after: { available },
+  }, now);
   await batch.commit();
 }

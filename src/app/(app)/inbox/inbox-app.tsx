@@ -61,11 +61,13 @@ export function InboxApp(props: InboxProps) {
     const constraints: QueryConstraint[] = spec.clauses.map(([f, op, v]) => where(f, op, v));
     const q = query(collection(firebaseClient().db, orgPath(props.orgId, "conversations")), ...constraints, orderBy("lastMessageAt", "desc"), limit(PAGE));
     const team = new Set(props.teamUids);
+    const myTeams = new Set(props.myTeamIds);
     return onSnapshot(
       q,
       (snap) => {
         let rows = snap.docs.map((d) => ({ ...(d.data() as Conversation), id: d.id }));
-        if (spec.teamOnly) rows = rows.filter((c) => !c.assigneeId || team.has(c.assigneeId));
+        // Supervisor: lo de su gente, y lo sin asignar que es de sus equipos o de ninguno.
+        if (spec.teamOnly) rows = rows.filter((c) => (c.assigneeId ? team.has(c.assigneeId) : !c.teamId || myTeams.has(c.teamId)));
         setListResult({ key: listKey, items: rows, error: null });
       },
       (err) => {
@@ -74,7 +76,7 @@ export function InboxApp(props: InboxProps) {
         setListResult({ key: listKey, items: [], error: message });
       },
     );
-  }, [ready, spec, listKey, props.orgId, props.teamUids]);
+  }, [ready, spec, listKey, props.orgId, props.teamUids, props.myTeamIds]);
 
   // Conversación seleccionada en tiempo real (aunque no esté en el filtro actual).
   useEffect(() => {

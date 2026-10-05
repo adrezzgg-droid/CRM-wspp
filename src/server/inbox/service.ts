@@ -21,10 +21,11 @@ import { recordActivityIn, type ActivityEntry } from "@/server/audit";
 import { can, type Action } from "@/server/permissions/matrix";
 import { scopeAllows } from "@/server/permissions/scope";
 import type { Session } from "@/server/auth/session";
-import { getGeneralSettings, getMembers, getTags, OWNER_ROLES, scopeContext } from "@/server/org/data";
+import { getGeneralSettings, getMembers, getTags, getTeams, OWNER_ROLES, scopeContext } from "@/server/org/data";
 import { buildInboundPayload, isWindowOpen, messagePreview, parseWebhook, type MetaMessage } from "@/lib/whatsapp/webhook";
 import { toWhatsappId } from "@/lib/phone";
-import type { conversationUpdate, demoInboundInput } from "@/lib/schemas";
+import { advanceLead } from "@/lib/assignment";
+import type { assignInput, conversationUpdate, demoInboundInput } from "@/lib/schemas";
 import { ingestInbound, type IngestResult } from "./ingest-core";
 import { senderFor, type OutboundMedia } from "./sender";
 
@@ -93,6 +94,9 @@ async function recordOutbound(session: Session, conv: Conversation, message: Mes
       lastMessagePreview: messagePreview(message),
       lastMessageDirection: "out",
       awaitingReply: false,
+      // Se respondió: termina la espera (y su alerta de demora).
+      awaitingSince: FieldValue.delete(),
+      slaAlertedAt: FieldValue.delete(),
       unreadCount: 0,
       ...(current.status === "nueva" || current.status === "pendiente" ? { status: "en_atencion" } : {}),
       ...(firstResponse ? { firstResponseAt: now } : {}),
@@ -106,9 +110,15 @@ async function recordOutbound(session: Session, conv: Conversation, message: Mes
     }
     const lead = leadSnap?.data() as Lead | undefined;
     if (leadRef && lead && !lead.firstResponseAt) {
-      const advance = lead.status === "recibido" || lead.status === "asignado";
-      tx.update(leadRef, { firstResponseAt: now, ...(advance ? { status: "contactado" } : {}), updatedAt: now, updatedBy: session.uid });
-      if (advance) recordActivityIn(tx, activity(session, conv, "lead.contactado", "Lead contactado"), now);
+      const status = advanceLead(lead.status, "contactado");
+      const advanced = status !== lead.status;
+      tx.update(leadRef, {
+        firstResponseAt: now,
+        ...(advanced ? { status, "statusAt.contactado": now } : {}),
+        updatedAt: now,
+        updatedBy: session.uid,
+      });
+      if (advanced) recordActivityIn(tx, activity(session, conv, "lead.contactado", "Lead contactado"), now);
     }
   });
 }
@@ -282,26 +292,48 @@ export async function updateConversation(session: Session, conversationId: strin
   await batch.commit();
 }
 
-export async function assignConversation(session: Session, conversationId: string, assigneeId: string | null) {
+/**
+ * Asignación manual a una persona y/o a un equipo. Asignar a alguien de un
+ * equipo distinto al de la conversación la mueve a ese equipo.
+ */
+export async function assignConversation(session: Session, conversationId: string, input: z.output<typeof assignInput>) {
   const conv = await loadConversation(session, conversationId, "asignar");
-  if (conv.assigneeId === assigneeId) return;
+  const ctx = await scopeContext(session, "inbox");
+  const members = await getMembers(session.orgId);
+  const teams = await getTeams(session.orgId);
+
+  const assigneeId = input.assigneeId === undefined ? conv.assigneeId : input.assigneeId;
+  let teamId = input.teamId === undefined ? (conv.teamId ?? null) : input.teamId;
+
   let assignee: Member | undefined;
-  if (assigneeId) {
-    assignee = (await getMembers(session.orgId)).find((m) => m.id === assigneeId);
+  if (assigneeId && assigneeId !== conv.assigneeId) {
+    assignee = members.find((m) => m.id === assigneeId);
     if (!assignee?.active || !OWNER_ROLES.has(assignee.role)) {
       throw new ApiError(422, "El usuario no está activo o no puede atender conversaciones");
     }
-    if (!scopeAllows(await scopeContext(session, "inbox"), assigneeId)) {
-      throw new ApiError(403, "Solo podés asignar conversaciones dentro de tu equipo");
-    }
+    if (!scopeAllows(ctx, assigneeId)) throw new ApiError(403, "Solo podés asignar conversaciones dentro de tu equipo");
+    // Si la persona no está en el equipo elegido, la conversación pasa a uno suyo.
+    const own = teams.filter((t) => t.memberIds.includes(assigneeId) || t.leaderIds.includes(assigneeId));
+    if (teamId && !own.some((t) => t.id === teamId)) teamId = own[0]?.id ?? null;
+    if (!teamId && own.length === 1) teamId = own[0].id;
   }
+  if (teamId && teamId !== conv.teamId) {
+    const team = teams.find((t) => t.id === teamId);
+    if (!team) throw new ApiError(422, "El equipo no existe");
+    if (ctx.scope === "equipo" && !team.leaderIds.includes(session.uid)) throw new ApiError(403, "Solo podés asignar a equipos que supervisás");
+  }
+  const personChanged = assigneeId !== conv.assigneeId;
+  const teamChanged = (teamId ?? null) !== (conv.teamId ?? null);
+  if (!personChanged && !teamChanged) return;
+
   const now = Date.now();
+  const teamName = teamId ? teams.find((t) => t.id === teamId)?.name : undefined;
   await adminDb().runTransaction(async (tx) => {
     const customerRef = col(session.orgId, "customers").doc(conv.customerId);
     const leadRef = conv.leadId ? col(session.orgId, "leads").doc(conv.leadId) : null;
     const [customerSnap, leadSnap] = await Promise.all([tx.get(customerRef), leadRef ? tx.get(leadRef) : Promise.resolve(null)]);
 
-    tx.update(convRef(session.orgId, conv.id), { assigneeId, updatedAt: now, updatedBy: session.uid });
+    tx.update(convRef(session.orgId, conv.id), { assigneeId, teamId: teamId ?? FieldValue.delete(), updatedAt: now, updatedBy: session.uid });
     const aRef = col(session.orgId, "assignments").doc();
     const assignment: Assignment = {
       orgId: session.orgId,
@@ -310,12 +342,20 @@ export async function assignConversation(session: Session, conversationId: strin
       conversationId: conv.id,
       fromId: conv.assigneeId ?? undefined,
       toId: assigneeId ?? undefined,
+      toTeamId: teamId ?? undefined,
       reason: conv.assigneeId ? "reasignacion" : "manual",
       byId: session.uid,
       at: now,
     };
     tx.create(aRef, assignment);
-    recordActivityIn(tx, activity(session, conv, "conversacion.asignada", assignee ? `Asignada a ${assignee.displayName}` : "Quedó sin responsable", { assigneeId: { before: conv.assigneeId, after: assigneeId } }), now);
+    const who = assignee?.displayName ?? (assigneeId ? members.find((m) => m.id === assigneeId)?.displayName : undefined);
+    const summary = personChanged
+      ? who ? `Asignada a ${who}${teamName ? ` (equipo ${teamName})` : ""}` : `Quedó sin responsable${teamName ? ` en el equipo ${teamName}` : ""}`
+      : teamName ? `Pasó al equipo ${teamName}` : "Quedó sin equipo";
+    recordActivityIn(tx, activity(session, conv, "conversacion.asignada", summary, {
+      ...(personChanged ? { assigneeId: { before: conv.assigneeId, after: assigneeId } } : {}),
+      ...(teamChanged ? { teamId: { before: conv.teamId ?? null, after: teamId } } : {}),
+    }), now);
 
     // Un cliente sin responsable pasa a ser del vendedor que lo atiende.
     const customer = customerSnap.data() as Customer | undefined;
@@ -325,7 +365,13 @@ export async function assignConversation(session: Session, conversationId: strin
     }
     const lead = leadSnap?.data() as Lead | undefined;
     if (leadRef && lead && assignee) {
-      tx.update(leadRef, { ownerId: assignee.id, ...(lead.status === "recibido" ? { status: "asignado" } : {}), updatedAt: now, updatedBy: session.uid });
+      const status = advanceLead(lead.status, "asignado");
+      tx.update(leadRef, {
+        ownerId: assignee.id,
+        ...(status !== lead.status ? { status, "statusAt.asignado": now } : {}),
+        updatedAt: now,
+        updatedBy: session.uid,
+      });
     }
     if (assignee && assignee.id !== session.uid && assignee.notificationPrefs?.nueva_asignacion !== false) {
       const nRef = col(session.orgId, "notifications").doc();

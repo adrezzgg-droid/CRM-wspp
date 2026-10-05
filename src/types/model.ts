@@ -61,6 +61,8 @@ export interface Member extends Audited, TenantScoped {
   active: boolean;
   /** Disponible para recibir asignación automática. */
   available: boolean;
+  /** Última asignación automática recibida (turno rotativo). */
+  lastAutoAssignedAt?: Timestamp;
   notificationPrefs: Partial<Record<NotificationType, boolean>>;
 }
 
@@ -163,9 +165,37 @@ export interface Lead extends Audited, TenantScoped {
   conversationId?: Id;
   source: "whatsapp" | "manual" | "import" | "api";
   status: LeadStatus;
+  /** Cuándo pasó por cada estado (trazabilidad del recorrido). */
+  statusAt?: Partial<Record<LeadStatus, Timestamp>>;
   ownerId?: Id;
   firstResponseAt?: Timestamp;
   lostReason?: string;
+}
+
+export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
+  recibido: "Recibido",
+  asignado: "Asignado",
+  contactado: "Contactado",
+  en_negociacion: "En negociación",
+  pedido_generado: "Pedido generado",
+  venta_realizada: "Venta realizada",
+  cerrado: "Cerrado",
+  perdido: "Perdido",
+};
+
+/** `organizations/{orgId}/settings/assignment` */
+export interface AssignmentSettings {
+  /** Asignar automáticamente las conversaciones nuevas sin responsable. */
+  autoAssign: boolean;
+  /** Si el cliente tiene zona, priorizar vendedores de esa zona. */
+  useZones: boolean;
+  /** Si nadie cubre la zona, asignar a cualquier vendedor disponible. */
+  zoneFallback: boolean;
+  /** Alerta si nadie responde en `slaMinutes`. */
+  slaEnabled: boolean;
+  slaMinutes: number;
+  updatedAt: Timestamp;
+  updatedBy: Id | "system";
 }
 
 // ─────────────────────────── Conversaciones y mensajes ─────────────────────
@@ -213,6 +243,10 @@ export interface Conversation extends Audited, TenantScoped {
   /** Fin de la ventana de 24 h de Meta (lastInboundAt + 24 h). */
   serviceWindowEndsAt?: Timestamp;
   awaitingReply: boolean;
+  /** Primer mensaje del cliente todavía sin respuesta (base de la alerta de demora). */
+  awaitingSince?: Timestamp;
+  /** Ya se avisó la demora de la espera actual. */
+  slaAlertedAt?: Timestamp;
   /** Primera respuesta del equipo (para medir tiempo de respuesta). */
   firstResponseAt?: Timestamp;
   closedAt?: Timestamp;

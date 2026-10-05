@@ -9,6 +9,11 @@ export interface InboxProps {
   isDemo: boolean;
   scope: Scope | null;
   teamUids: string[];
+  /** Equipos que lidera (supervisor): ve lo sin asignar de esos equipos y de ninguno. */
+  myTeamIds: string[];
+  /** Equipos a los que puede asignar. */
+  teams: { id: string; name: string }[];
+  sla: { enabled: boolean; minutes: number };
   members: { id: string; name: string; role: string; active: boolean }[];
   /** Usuarios a los que este usuario puede asignar conversaciones. */
   assignable: { id: string; name: string }[];

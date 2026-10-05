@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { requireSession } from "@/server/auth/guards";
 import { ROLE_LABELS } from "@/server/permissions/matrix";
 import { mainNavFor, SIDEBAR_COOKIE } from "@/lib/navigation";
+import { OWNER_ROLES } from "@/server/org/data";
 import { AppShell } from "@/components/shell/app-shell";
 import { FirebaseSessionProvider } from "@/components/providers/firebase-session";
 
@@ -16,6 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           displayName: session.member.displayName,
           email: session.email,
           roleLabel: ROLE_LABELS[session.role],
+          available: OWNER_ROLES.has(session.role) ? session.member.available : undefined,
         }}
         org={{ name: session.org.name, isDemo: session.org.isDemo }}
         initialCollapsed={collapsed}

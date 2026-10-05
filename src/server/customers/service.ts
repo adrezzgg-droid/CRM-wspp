@@ -5,6 +5,7 @@ import type {
   Contact,
   Conversation,
   Customer,
+  Lead,
   Note,
   Opportunity,
   Order,
@@ -209,13 +210,14 @@ export interface Customer360 {
   orders: Order[];
   tasks: Task[];
   opportunities: Opportunity[];
+  leads: Lead[];
 }
 
 export async function getCustomer360(session: Session, id: string): Promise<Customer360> {
   const customer = await getAccessibleCustomer(session, id);
   const by = (c: Parameters<typeof orgPath>[1]) => col(session.orgId, c).where("customerId", "==", id);
   const rows = async <T,>(q: Query) => (await q.get()).docs.map((d) => ({ ...(d.data() as T), id: d.id }));
-  const [contacts, notes, activities, conversations, orders, tasks, opportunities] = await Promise.all([
+  const [contacts, notes, activities, conversations, orders, tasks, opportunities, leads] = await Promise.all([
     rows<Contact>(by("contacts").orderBy("name").limit(50)),
     rows<Note>(by("notes").orderBy("createdAt", "desc").limit(50)),
     rows<Activity>(by("activities").orderBy("at", "desc").limit(100)),
@@ -223,8 +225,9 @@ export async function getCustomer360(session: Session, id: string): Promise<Cust
     rows<Order>(by("orders").orderBy("createdAt", "desc").limit(20)),
     rows<Task>(by("tasks").where("status", "==", "pendiente").orderBy("dueAt").limit(20)),
     rows<Opportunity>(by("opportunities").orderBy("updatedAt", "desc").limit(20)),
+    rows<Lead>(by("leads").orderBy("createdAt", "desc").limit(10)),
   ]);
-  return { customer, contacts, notes, activities, conversations, orders, tasks, opportunities };
+  return { customer, contacts, notes, activities, conversations, orders, tasks, opportunities, leads };
 }
 
 // ──────────────────────────────── Escritura ────────────────────────────────

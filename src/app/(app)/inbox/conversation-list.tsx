@@ -1,13 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Search } from "lucide-react";
+import { AlertTriangle, Search, Timer } from "lucide-react";
 import type { Conversation } from "@/types/model";
 import { CONVERSATION_STATUS_LABELS } from "@/types/model";
 import { INBOX_FILTERS, type InboxFilter } from "@/lib/inbox-filters";
 import { normalizeText } from "@/lib/search";
 import { formatWhatsappId } from "@/lib/phone";
 import { inputClass } from "@/components/ui/styles";
+import { waitingMinutes } from "@/lib/assignment";
+import { useNow } from "@/lib/use-now";
 import { makeFormatters, initials } from "./format";
 import { SimulatorButton } from "./simulator";
 import type { InboxProps } from "./types";
@@ -44,6 +46,7 @@ export function ConversationList({
 }) {
   const [search, setSearch] = useState("");
   const fmt = useMemo(() => makeFormatters(props.timezone), [props.timezone]);
+  const now = useNow();
   const filters = INBOX_FILTERS.filter((f) => !(f.id === "sin_asignar" && props.scope === "propio"));
 
   const visible = useMemo(() => {
@@ -129,6 +132,12 @@ export function ConversationList({
                       <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-muted">
                         <span>{formatWhatsappId(c.waContactId)}</span>
                         <span>· {c.assigneeId ? names.get(c.assigneeId) ?? "—" : <span className="text-amber-700">Sin asignar</span>}</span>
+                        {c.awaitingReply && props.sla.enabled && c.status !== "cerrada" && waitingMinutes(c.awaitingSince, now) >= props.sla.minutes && (
+                          <span className="inline-flex items-center gap-0.5 rounded bg-red-100 px-1 font-semibold text-red-700" title="Supera el tiempo máximo de respuesta">
+                            <Timer className="size-3" aria-hidden />
+                            {waitingMinutes(c.awaitingSince, now)} min
+                          </span>
+                        )}
                         <span className="sr-only">Estado: {CONVERSATION_STATUS_LABELS[c.status]}</span>
                         {(c.priority === "alta" || c.priority === "urgente") && (
                           <span className={`rounded px-1 font-semibold uppercase ${c.priority === "urgente" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>{c.priority}</span>

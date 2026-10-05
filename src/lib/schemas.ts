@@ -188,7 +188,11 @@ export const conversationUpdate = z
   .partial()
   .refine((v) => Object.keys(v).length > 0, "No hay cambios");
 
-export const assignInput = z.object({ assigneeId: id.nullable() });
+/** Asignar a una persona y/o a un equipo (null = quitar). */
+export const assignInput = z
+  .object({ assigneeId: id.nullable(), teamId: id.nullable() })
+  .partial()
+  .refine((v) => v.assigneeId !== undefined || v.teamId !== undefined, "Indicá a quién o a qué equipo asignar");
 
 /** Simulador del modo demo: un mensaje entrante como si llegara de WhatsApp. */
 export const DEMO_INBOUND_TYPES = ["text", "image", "document", "audio", "video", "location", "contacts", "button_reply", "list_reply"] as const;
@@ -208,3 +212,31 @@ export const tagInput = z.object({
   name: text(40, "Nombre").min(1, "El nombre es obligatorio").transform((v) => v.toUpperCase()),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color inválido"),
 });
+
+// ───────────────────────── Asignación y leads ───────────────────────────────
+
+export const LEAD_STATUSES = ["recibido", "asignado", "contactado", "en_negociacion", "pedido_generado", "venta_realizada", "cerrado", "perdido"] as const;
+
+export const leadStatusInput = z
+  .object({
+    status: z.enum(LEAD_STATUSES),
+    lostReason: optionalText(200, "Motivo"),
+  })
+  .refine((v) => v.status !== "perdido" || !!v.lostReason, { message: "Indicá el motivo de la pérdida", path: ["lostReason"] });
+
+export const assignmentSettingsInput = z.object({
+  autoAssign: z.boolean(),
+  useZones: z.boolean(),
+  zoneFallback: z.boolean(),
+  slaEnabled: z.boolean(),
+  slaMinutes: z.coerce.number().int().min(1, "Mínimo 1 minuto").max(1440, "Máximo 24 h"),
+});
+
+export const zoneInput = z.object({
+  name: text(60, "Nombre").min(2, "El nombre es obligatorio"),
+  localities: z.array(text(80, "Localidad").min(1)).max(100).default([]),
+  /** Vendedores que cubren la zona (se guarda en member.zoneIds). */
+  sellerIds: z.array(id).max(100).default([]),
+});
+
+export const availabilityInput = z.object({ available: z.boolean() });

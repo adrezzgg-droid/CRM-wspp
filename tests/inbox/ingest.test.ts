@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { applyStatus, ingestInbound, conversationIdFor } from "../../src/server/inbox/ingest-core.ts";
+import { runSlaCheck } from "../../src/server/inbox/sla-core.ts";
 import { parseWebhook, buildInboundPayload, type InboundMessage } from "../../src/lib/whatsapp/webhook.ts";
 
 const ORG = "org-ingest";
@@ -36,7 +37,7 @@ function inbound(from: string, text: string, extra: Partial<InboundMessage> = {}
 }
 
 async function clear() {
-  for (const name of ["customers", "conversations", "leads", "activities", "notifications", "assignments", "members"]) {
+  for (const name of ["customers", "conversations", "leads", "activities", "notifications", "assignments", "members", "settings", "teams"]) {
     const snap = await org.collection(name).get();
     for (const d of snap.docs) {
       if (name === "conversations") for (const m of (await d.ref.collection("messages").get()).docs) await m.ref.delete();
@@ -169,5 +170,88 @@ describe("estados de entrega", () => {
     assert.equal(await s("delivered"), false);
     assert.equal((await out.get()).data()!.status, "read");
     assert.equal(await applyStatus(db, target, { phoneNumberId: "pn1", wamid: "no-existe", status: "read", timestamp: 1, recipient: "5493516000008" }), false);
+  });
+});
+
+describe("asignación automática", () => {
+  const available = async (id: string, extra: Record<string, unknown> = {}) => member(id, "vendedor", { available: true, zoneIds: [], ...extra });
+
+  test("turno rotativo entre vendedores disponibles; el cliente nuevo queda del vendedor", async () => {
+    await available("v1", { lastAutoAssignedAt: 100 });
+    await available("v2", { lastAutoAssignedAt: 50 });
+    const r1 = await ingestInbound(db, target, inbound("5493517000001", "hola"));
+    const r2 = await ingestInbound(db, target, inbound("5493517000002", "hola"));
+    const r3 = await ingestInbound(db, target, inbound("5493517000003", "hola"));
+    assert.deepEqual([r1.assigneeId, r2.assigneeId, r3.assigneeId], ["v2", "v1", "v2"]);
+    assert.equal(r1.assignmentReason, "regla_nuevo");
+    assert.equal((await org.collection("customers").doc(r1.customerId).get()).data()!.ownerId, "v2");
+    const lead = (await org.collection("leads").where("conversationId", "==", r1.conversationId).get()).docs[0].data();
+    assert.equal(lead.status, "asignado");
+    assert.ok(lead.statusAt.recibido && lead.statusAt.asignado);
+    const notified = (await org.collection("notifications").where("userId", "==", "v2").get()).docs.map((d) => d.data().type);
+    assert.ok(notified.includes("nuevo_lead"));
+  });
+
+  test("por zona: el cliente con zona va al vendedor que la cubre", async () => {
+    await available("v1", { zoneIds: ["norte"], lastAutoAssignedAt: 999 });
+    await available("v2", { zoneIds: ["sur"] });
+    await org.collection("customers").doc("cz").set({ id: "cz", name: "Kiosco", whatsappId: "5493517000010", ownerId: null, zoneId: "norte", stage: "prospecto", tagIds: [], archived: false });
+    const r = await ingestInbound(db, target, inbound("5493517000010", "hola"));
+    assert.equal(r.assigneeId, "v1");
+    assert.equal(r.assignmentReason, "regla_zona");
+  });
+
+  test("desactivada o sin vendedores disponibles: queda sin asignar", async () => {
+    await available("v1", { available: false });
+    const r = await ingestInbound(db, target, inbound("5493517000020", "hola"));
+    assert.equal(r.assigneeId, null);
+    await available("v1");
+    await org.collection("settings").doc("assignment").set({ autoAssign: false });
+    const r2 = await ingestInbound(db, target, inbound("5493517000021", "hola"));
+    assert.equal(r2.assigneeId, null);
+  });
+
+  test("si el responsable fue dado de baja, se reasigna", async () => {
+    await member("ex", "vendedor", { active: false });
+    await available("v1");
+    await org.collection("customers").doc("cx").set({ id: "cx", name: "Bar", whatsappId: "5493517000030", ownerId: "ex", stage: "cliente_activo", tagIds: [], archived: false });
+    const r = await ingestInbound(db, target, inbound("5493517000030", "hola"));
+    assert.equal(r.assigneeId, "v1");
+    assert.equal((await org.collection("customers").doc("cx").get()).data()!.ownerId, "v1");
+    const activity = (await org.collection("activities").where("kind", "==", "cliente.asignado").get()).docs[0].data();
+    assert.deepEqual(activity.data.ownerId, { before: "ex", after: "v1" });
+  });
+});
+
+describe("alerta de demora", () => {
+  test("avisa una vez al responsable y a su supervisor; responder reinicia la espera", async () => {
+    await member("v1", "vendedor", { available: true });
+    await org.collection("teams").doc("t1").set({ id: "t1", name: "Equipo", leaderIds: ["sup"], memberIds: ["v1"] });
+    await org.collection("settings").doc("assignment").set({ slaEnabled: true, slaMinutes: 10 });
+    const m = inbound("5493517000040", "hola");
+    const r = await ingestInbound(db, target, m);
+    assert.equal(r.assigneeId, "v1");
+    const conv = org.collection("conversations").doc(r.conversationId);
+    assert.equal((await conv.get()).data()!.awaitingSince, m.timestamp);
+
+    await org.collection("notifications").get().then((s) => Promise.all(s.docs.map((d) => d.ref.delete())));
+    const early = await runSlaCheck(db, ORG, m.timestamp + 9 * 60_000);
+    assert.equal(early.alerted, 0);
+    const late = await runSlaCheck(db, ORG, m.timestamp + 11 * 60_000);
+    assert.equal(late.alerted, 1);
+    const again = await runSlaCheck(db, ORG, m.timestamp + 30 * 60_000);
+    assert.equal(again.alerted, 0, "una sola alerta por espera");
+    const recipients = (await org.collection("notifications").get()).docs.map((d) => d.data().userId).sort();
+    assert.deepEqual(recipients, ["sup", "v1"]);
+    assert.ok((await conv.get()).data()!.slaAlertedAt);
+
+    // Un segundo mensaje mientras sigue esperando NO reinicia el reloj.
+    await ingestInbound(db, target, inbound("5493517000040", "¿hola?"));
+    assert.equal((await conv.get()).data()!.awaitingSince, m.timestamp);
+  });
+
+  test("desactivada no hace nada", async () => {
+    await org.collection("settings").doc("assignment").set({ slaEnabled: false });
+    assert.deepEqual(await runSlaCheck(db, ORG), { orgId: ORG, enabled: false, checked: 0, alerted: 0 });
   });
 });

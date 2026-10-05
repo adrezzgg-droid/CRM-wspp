@@ -8,7 +8,7 @@
  *
  * Modifica datos de la organización demo (se reinician con npm run seed:demo).
  */
-import { before, describe, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:3000";
@@ -63,9 +63,15 @@ interface ApiData {
   details: { path: string[] }[];
   error?: string;
   conversationId: string;
+  assigneeId: string | null;
+  assignmentReason?: string;
+  enabled: boolean;
+  alerted: number;
+  lead: { id: string; status: string };
+  zone: { id: string };
   newCustomer: boolean;
   reopened: boolean;
-  conversation: { id: string; status: string; assigneeId: string | null; customerId: string; unreadCount: number; awaitingReply: boolean; customerStage: string };
+  conversation: { id: string; status: string; assigneeId: string | null; teamId?: string; customerId: string; unreadCount: number; awaitingReply: boolean; customerStage: string; leadId?: string };
   message: { id: string; type: string; attachments?: { storagePath?: string }[] };
   tag: { id: string };
 }
@@ -223,9 +229,16 @@ describe("usuarios y permisos", () => {
   });
 });
 
+const ASSIGNMENT_ON = { autoAssign: true, useZones: true, zoneFallback: true, slaEnabled: true, slaMinutes: 15 };
+
 describe("bandeja", () => {
   const phone = randomPhone();
   let convId = "";
+
+  before(async () => {
+    // Para probar la asignación manual, sin reglas automáticas.
+    assert.equal((await call("admin", "PUT", "/api/settings/assignment", { ...ASSIGNMENT_ON, autoAssign: false })).status, 200);
+  });
 
   test("un número nuevo entra como lead sin asignar (simulador → tubería real)", async () => {
     const r = await upload("admin", "/api/demo/inbound", { phone, name: "Lead de Prueba", text: "Hola, ¿precios?" });
@@ -302,6 +315,92 @@ describe("bandeja", () => {
     assert.equal((await call("admin", "POST", "/api/tags", { name: name.toLowerCase(), color: "#654321" })).status, 409);
     assert.equal((await call("vendedor1", "PATCH", `/api/conversations/${convId}`, { tagIds: [created.data.tag.id] })).status, 200);
     assert.equal((await call("admin", "DELETE", `/api/tags/${created.data.tag.id}`)).status, 200);
+  });
+});
+
+describe("asignación automática, zonas y leads", () => {
+  after(async () => {
+    await call("admin", "PUT", "/api/settings/assignment", ASSIGNMENT_ON);
+  });
+
+  test("solo quien configura cambia las reglas; valida minutos", async () => {
+    assert.equal((await call("vendedor1", "PUT", "/api/settings/assignment", ASSIGNMENT_ON)).status, 403);
+    assert.equal((await call("admin", "PUT", "/api/settings/assignment", { ...ASSIGNMENT_ON, slaMinutes: 0 })).status, 422);
+    assert.equal((await call("admin", "PUT", "/api/settings/assignment", ASSIGNMENT_ON)).status, 200);
+  });
+
+  test("con reglas activas, un lead nuevo se asigna solo a un vendedor disponible", async () => {
+    const r = await upload("admin", "/api/demo/inbound", { phone: randomPhone(), name: "Lead Automático", text: "Hola" });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.ok([uids.vendedor1, uids.vendedor2].includes(r.data.assigneeId!), "asignado a un vendedor");
+    assert.equal(r.data.assignmentReason, "regla_nuevo");
+    const conv = (await call("admin", "GET", `/api/conversations/${r.data.conversationId}`)).data.conversation;
+    assert.equal((await call("admin", "GET", `/api/customers/${conv.customerId}`)).data.customer.ownerId, r.data.assigneeId);
+  });
+
+  test("disponibilidad: el vendedor se saca de la rotación; solo lectura no tiene", async () => {
+    assert.equal((await call("vendedor2", "POST", "/api/me/availability", { available: false })).status, 200);
+    try {
+      for (let i = 0; i < 2; i++) {
+        const r = await upload("admin", "/api/demo/inbound", { phone: randomPhone(), text: "Hola" });
+        assert.equal(r.data.assigneeId, uids.vendedor1, "solo queda vendedor1 disponible");
+      }
+    } finally {
+      assert.equal((await call("vendedor2", "POST", "/api/me/availability", { available: true })).status, 200);
+    }
+    assert.equal((await call("lectura", "POST", "/api/me/availability", { available: true })).status, 403);
+  });
+
+  test("zonas: ABM con vendedores; no se borra una zona con clientes", async () => {
+    const name = `Zona ${Date.now()}`;
+    assert.equal((await call("vendedor1", "POST", "/api/zones", { name })).status, 403);
+    const z = await call("admin", "POST", "/api/zones", { name, localities: ["Barrio X"], sellerIds: [uids.vendedor2] });
+    assert.equal(z.status, 200);
+    assert.equal((await call("admin", "POST", "/api/zones", { name: name.toUpperCase() })).status, 409);
+    // Un cliente con esa zona y sin dueño va al vendedor que la cubre aunque no sea su turno.
+    const phone = randomPhone();
+    const created = await call("admin", "POST", "/api/customers", { name: "Cliente de zona", whatsapp: phone, zoneId: z.data.zone.id, ownerId: null });
+    assert.equal(created.status, 200, JSON.stringify(created.data));
+    const r = await upload("admin", "/api/demo/inbound", { phone, text: "Hola" });
+    assert.equal(r.data.assigneeId, uids.vendedor2);
+    assert.equal(r.data.assignmentReason, "regla_zona");
+    assert.equal((await call("admin", "DELETE", `/api/zones/${z.data.zone.id}`)).status, 409);
+    const empty = await call("admin", "POST", "/api/zones", { name: `${name} B` });
+    assert.equal((await call("admin", "DELETE", `/api/zones/${empty.data.zone.id}`)).status, 200);
+  });
+
+  test("recorrido del lead: el responsable lo avanza; una venta convierte al prospecto", async () => {
+    await call("admin", "PUT", "/api/settings/assignment", { ...ASSIGNMENT_ON, autoAssign: false });
+    const r = await upload("admin", "/api/demo/inbound", { phone: randomPhone(), name: "Lead Venta", text: "Quiero comprar" });
+    await call("admin", "POST", `/api/conversations/${r.data.conversationId}/assign`, { assigneeId: uids.vendedor1 });
+    const conv = (await call("vendedor1", "GET", `/api/conversations/${r.data.conversationId}`)).data.conversation;
+    assert.ok(conv.leadId);
+    assert.equal((await call("vendedor2", "PATCH", `/api/leads/${conv.leadId}`, { status: "en_negociacion" })).status, 404);
+    assert.equal((await call("vendedor1", "PATCH", `/api/leads/${conv.leadId}`, { status: "perdido" })).status, 422);
+    const neg = await call("vendedor1", "PATCH", `/api/leads/${conv.leadId}`, { status: "en_negociacion" });
+    assert.equal(neg.status, 200);
+    assert.equal(neg.data.lead.status, "en_negociacion");
+    assert.equal((await call("vendedor1", "PATCH", `/api/leads/${conv.leadId}`, { status: "venta_realizada" })).status, 200);
+    assert.equal((await call("vendedor1", "GET", `/api/customers/${conv.customerId}`)).data.customer.stage, "cliente_nuevo");
+    assert.equal((await call("vendedor1", "GET", `/api/conversations/${conv.id}`)).data.conversation.customerStage, "cliente_nuevo");
+  });
+
+  test("asignar a un equipo", async () => {
+    const r = await upload("admin", "/api/demo/inbound", { phone: randomPhone(), text: "Hola" });
+    assert.equal((await call("admin", "POST", `/api/conversations/${r.data.conversationId}/assign`, { teamId: "comercial" })).status, 200);
+    const conv = (await call("admin", "GET", `/api/conversations/${r.data.conversationId}`)).data.conversation;
+    assert.equal(conv.teamId, "comercial");
+    assert.equal(conv.assigneeId, null);
+    assert.equal((await call("admin", "POST", `/api/conversations/${r.data.conversationId}/assign`, { teamId: "no-existe" })).status, 422);
+  });
+
+  test("revisión de demoras: a pedido y por tarea programada con secreto", async () => {
+    const run = await call("admin", "POST", "/api/assignment/sla");
+    assert.equal(run.status, 200);
+    assert.equal(typeof run.data.alerted, "number");
+    assert.equal((await call("vendedor1", "POST", "/api/assignment/sla")).status, 403);
+    assert.equal((await fetch(`${BASE}/api/cron/sla`)).status, 401);
+    assert.equal((await fetch(`${BASE}/api/cron/sla`, { headers: { Authorization: "Bearer cualquiera" } })).status, 401);
   });
 });
 

@@ -6,7 +6,7 @@
  *
  * Todo vive en la organización "demo" con isDemo: true. Nunca toca otra.
  */
-import type { Firestore } from "firebase-admin/firestore";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import type { Role } from "../src/server/permissions/matrix.ts";
 import type { Customer, CustomerStage } from "../src/types/model.ts";
 import { customerKeywords } from "../src/lib/search.ts";
@@ -179,6 +179,10 @@ async function seedConversations(db: Firestore, uids: Record<string, string>) {
     updatedBy: "system",
   };
   await db.doc(`organizations/${ORG_ID}/whatsappAccounts/demo`).set(account);
+  // Reglas de asignación del demo: automáticas, por zona y alerta a los 15 min.
+  await db.doc(`organizations/${ORG_ID}/settings/assignment`).set({ autoAssign: true, useZones: true, zoneFallback: true, slaEnabled: true, slaMinutes: 15, updatedAt: now, updatedBy: "system" });
+  // El turno arranca de cero en cada reinicio.
+  for (const uid of Object.values(uids)) await db.doc(`organizations/${ORG_ID}/members/${uid}`).update({ lastAutoAssignedAt: FieldValue.delete() });
   const target = { orgId: ORG_ID, isDemo: true, accountId: "demo" };
 
   let n = 0;
@@ -203,7 +207,7 @@ async function seedConversations(db: Firestore, uids: Record<string, string>) {
     await ref.collection("messages").doc(`wamid.demo.seed${n}`).set({
       id: `wamid.demo.seed${n}`, orgId: ORG_ID, isDemo: true, conversationId, direction: "out", type: "text", text, senderId: sender, status: "read", timestamp: ts, createdAt: ts,
     });
-    await ref.update({ lastMessageAt: ts, lastMessagePreview: messagePreview({ type: "text", text }), lastMessageDirection: "out", awaitingReply: false, unreadCount: 0, status: "en_atencion", firstResponseAt: ts });
+    await ref.update({ lastMessageAt: ts, lastMessagePreview: messagePreview({ type: "text", text }), lastMessageDirection: "out", awaitingReply: false, awaitingSince: FieldValue.delete(), unreadCount: 0, status: "en_atencion", firstResponseAt: ts });
   }
   const text = (body: string) => ({ type: "text", text: { body } });
 
@@ -216,12 +220,12 @@ async function seedConversations(db: Firestore, uids: Record<string, string>) {
   await inbound("3543 44 1122", "Carolina Vega", 40, text("Hola María, ¿me pasás la lista de precios mayorista?"));
   await inbound("3543 44 1122", "Carolina Vega", 39, { type: "location", location: { latitude: -31.2919, longitude: -64.2913, name: "Mayorista Norte", address: "Villa Allende" } });
 
-  // Leads nuevos, sin asignar.
+  // Leads nuevos: se reparten solos por turno entre los vendedores disponibles.
   await inbound("351 666 1010", "Martín Acosta", 25, text("Hola, tengo una rotisería en barrio Jardín. ¿Hacen envíos? ¿Cuál es el mínimo?"));
   await inbound("351 666 2020", "Restó La Esquina", 8, text("Buenas, ¿precio del pollo entero por cajón?"));
   await inbound("351 666 2020", "Restó La Esquina", 7, { type: "interactive", interactive: { type: "button_reply", button_reply: { id: "precios", title: "Ver precios" } } });
 
-  // Prospecto existente sin responsable.
+  // Prospecto existente sin responsable, con zona Centro: va al vendedor de esa zona.
   await inbound("351 555 6789", "Valeria Castro", 180, text("¿Siguen teniendo la promo de alitas?"));
 
   // Conversación cerrada.

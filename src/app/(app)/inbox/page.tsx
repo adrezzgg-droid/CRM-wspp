@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { requireAccess } from "@/server/auth/guards";
 import { can } from "@/server/permissions/matrix";
 import { scopeAllows } from "@/server/permissions/scope";
-import { getMembers, getTags, OWNER_ROLES, scopeContext } from "@/server/org/data";
+import { getMembers, getTags, getTeams, OWNER_ROLES, scopeContext } from "@/server/org/data";
+import { getAssignmentSettings } from "@/server/org/assignment";
 import { customerFormOptions } from "@/server/customers/options";
 import { InboxApp } from "./inbox-app";
 
@@ -10,7 +11,14 @@ export const metadata: Metadata = { title: "Bandeja" };
 
 export default async function InboxPage() {
   const session = await requireAccess("inbox");
-  const [members, tags, ctx] = await Promise.all([getMembers(session.orgId), getTags(session.orgId), scopeContext(session, "inbox")]);
+  const [members, tags, ctx, teams, assignment] = await Promise.all([
+    getMembers(session.orgId),
+    getTags(session.orgId),
+    scopeContext(session, "inbox"),
+    getTeams(session.orgId),
+    getAssignmentSettings(session.orgId),
+  ]);
+  const myTeams = teams.filter((t) => t.leaderIds.includes(session.uid));
   const canAssign = can(session.role, "inbox", "asignar", session.overrides);
   const canEditCustomer = can(session.role, "clientes", "editar", session.overrides);
 
@@ -22,6 +30,9 @@ export default async function InboxPage() {
       isDemo={session.org.isDemo}
       scope={ctx.scope}
       teamUids={[...ctx.teamUids]}
+      myTeamIds={myTeams.map((t) => t.id)}
+      teams={(canAssign ? (ctx.scope === "todo" ? teams : myTeams) : []).map((t) => ({ id: t.id, name: t.name }))}
+      sla={{ enabled: assignment.slaEnabled, minutes: assignment.slaMinutes }}
       members={members.map((m) => ({ id: m.id, name: m.displayName, role: m.role, active: m.active }))}
       assignable={
         canAssign

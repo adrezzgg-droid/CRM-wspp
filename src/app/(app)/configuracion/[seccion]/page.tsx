@@ -13,9 +13,13 @@ import { RolesEditor } from "../sections/roles-editor";
 import { TeamsManager } from "../sections/teams-manager";
 import { GeneralForm, OrganizationForm } from "../sections/settings-forms";
 import { TagsManager } from "../sections/tags-manager";
+import { ZonesManager } from "../sections/zones-manager";
+import { AssignmentForm } from "../sections/assignment-form";
+import { getAssignmentSettings } from "@/server/org/assignment";
+import { OWNER_ROLES } from "@/server/org/data";
+import { orgPath } from "@/types/model";
 
 const PENDING_ITEMS: Record<string, string[]> = {
-  zonas: ["Zonas y localidades", "Vendedor responsable por zona", "Asignación automática por zona"],
   whatsapp: ["Número conectado, Phone Number ID y WABA ID", "Access Token cifrado en el servidor", "URL y Verify Token del webhook", "Estado de conexión y prueba"],
   plantillas: ["Plantillas con variables {{nombre}}, {{pedido}}…", "Categorías de Meta", "Estado de aprobación en Meta"],
   automatizaciones: ["Disparadores: nuevo WhatsApp, sin respuesta, pedido, sin compra", "Acciones: asignar, etiquetar, mensaje, tarea", "Historial de ejecuciones"],
@@ -102,6 +106,34 @@ async function SectionBody({ slug, phase, session }: { slug: string; phase: numb
           names={Object.fromEntries(members.map((m) => [m.id, m.displayName]))}
           canEdit={can(session.role, "equipos", "editar", session.overrides) && can(session.role, "equipos", "crear", session.overrides)}
           canDelete={can(session.role, "equipos", "eliminar", session.overrides)}
+        />
+      );
+    }
+    case "zonas": {
+      const [zones, members] = await Promise.all([getZones(session.orgId), getMembers(session.orgId)]);
+      const customers = adminDb().collection(orgPath(session.orgId, "customers"));
+      const counts = await Promise.all(zones.map((z) => customers.where("zoneId", "==", z.id).where("archived", "==", false).count().get().then((r) => r.data().count)));
+      const sellers = members.filter((m) => m.active && OWNER_ROLES.has(m.role)).sort((a, b) => a.displayName.localeCompare(b.displayName, "es"));
+      return (
+        <ZonesManager
+          zones={zones
+            .map((z, i) => ({ id: z.id, name: z.name, localities: z.localities ?? [], sellerIds: sellers.filter((m) => m.zoneIds?.includes(z.id)).map((m) => m.id), customers: counts[i] }))
+            .sort((a, b) => a.name.localeCompare(b.name, "es"))}
+          sellers={sellers.map((m) => ({ id: m.id, name: m.displayName, available: m.available }))}
+          names={Object.fromEntries(members.map((m) => [m.id, m.displayName]))}
+          canEdit={editConfig}
+        />
+      );
+    }
+    case "asignacion": {
+      const [settings, members] = await Promise.all([getAssignmentSettings(session.orgId), getMembers(session.orgId)]);
+      const sellers = members.filter((m) => m.active && m.role === "vendedor");
+      return (
+        <AssignmentForm
+          initial={{ autoAssign: settings.autoAssign, useZones: settings.useZones, zoneFallback: settings.zoneFallback, slaEnabled: settings.slaEnabled, slaMinutes: settings.slaMinutes }}
+          readOnly={!editConfig}
+          canRunSla={can(session.role, "inbox", "asignar", session.overrides)}
+          sellers={{ total: sellers.length, available: sellers.filter((m) => m.available).length }}
         />
       );
     }

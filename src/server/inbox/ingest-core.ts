@@ -8,12 +8,20 @@
  * Garantías:
  *  - Idempotente: el id del mensaje es el wamid de Meta; un reintento del
  *    webhook no duplica nada.
- *  - Atómica: cliente, lead, conversación, mensaje, historial y avisos se
- *    escriben en una sola transacción.
+ *  - Atómica: cliente, lead, conversación, asignación, mensaje, historial y
+ *    avisos se escriben en una sola transacción.
+ *
+ * Asignación (en este orden):
+ *  1. La conversación ya tiene responsable activo → se mantiene.
+ *  2. El cliente tiene vendedor activo → se le asigna ("cliente existente").
+ *  3. Reglas automáticas (settings/assignment): zona del cliente o turno rotativo
+ *     entre vendedores disponibles. Si el responsable anterior fue dado de baja,
+ *     también se reasigna por reglas.
  */
 import { FieldValue, type DocumentReference, type Firestore, type Transaction } from "firebase-admin/firestore";
 import type {
   Assignment,
+  AssignmentSettings,
   Conversation,
   Customer,
   Lead,
@@ -25,6 +33,7 @@ import type {
 } from "../../types/model.ts";
 import { customerKeywords } from "../../lib/search.ts";
 import { formatWhatsappId } from "../../lib/phone.ts";
+import { advanceLead, DEFAULT_ASSIGNMENT_SETTINGS, pickAssignee } from "../../lib/assignment.ts";
 import { messagePreview, SERVICE_WINDOW_MS, type InboundMessage, type StatusUpdate } from "../../lib/whatsapp/webhook.ts";
 
 export interface IngestTarget {
@@ -44,6 +53,9 @@ export interface IngestResult {
   newCustomer: boolean;
   newConversation: boolean;
   reopened: boolean;
+  /** Responsable final de la conversación (null = sin asignar). */
+  assigneeId: string | null;
+  assignmentReason?: Assignment["reason"];
 }
 
 export const conversationIdFor = (accountId: string, waId: string) => `${accountId}_${waId}`;
@@ -72,6 +84,14 @@ function notifyIn(
   }
 }
 
+const REASON_TEXT: Record<Assignment["reason"], string> = {
+  cliente_existente: "responsable del cliente",
+  regla_zona: "regla por zona",
+  regla_nuevo: "turno rotativo",
+  manual: "manual",
+  reasignacion: "reasignación",
+};
+
 export async function ingestInbound(db: Firestore, target: IngestTarget, m: InboundMessage): Promise<IngestResult> {
   const org = db.collection("organizations").doc(target.orgId);
   const conversationId = conversationIdFor(target.accountId, m.from);
@@ -80,30 +100,37 @@ export async function ingestInbound(db: Firestore, target: IngestTarget, m: Inbo
   const now = Date.now();
 
   return db.runTransaction(async (tx) => {
-    const [msgSnap, convSnap, custSnap, membersSnap] = await Promise.all([
+    const [msgSnap, convSnap, custSnap, membersSnap, settingsSnap] = await Promise.all([
       tx.get(msgRef),
       tx.get(convRef),
       tx.get(org.collection("customers").where("whatsappId", "==", m.from).limit(1)),
       tx.get(org.collection("members").where("active", "==", true)),
+      tx.get(org.collection("settings").doc("assignment")),
     ]);
     const base = { conversationId, messageId: m.wamid };
+    const previous = convSnap.data() as Conversation | undefined;
     if (msgSnap.exists) {
-      const conv = convSnap.data() as Conversation | undefined;
-      return { ...base, duplicate: true, customerId: conv?.customerId ?? "", newCustomer: false, newConversation: false, reopened: false };
+      return { ...base, duplicate: true, customerId: previous?.customerId ?? "", newCustomer: false, newConversation: false, reopened: false, assigneeId: previous?.assigneeId ?? null };
     }
     const members = membersSnap.docs.map((d) => ({ ...(d.data() as Member), id: d.id }));
     const memberById = new Map(members.map((x) => [x.id, x]));
+    const settings = { ...DEFAULT_ASSIGNMENT_SETTINGS, ...(settingsSnap.data() as Partial<AssignmentSettings> | undefined) };
     const scoped = { orgId: target.orgId, isDemo: target.isDemo };
+
+    // ── Lecturas previas a cualquier escritura (requisito de las transacciones).
+    const leadRef = previous?.leadId ? org.collection("leads").doc(previous.leadId) : null;
+    const previousLead = leadRef ? ((await tx.get(leadRef)).data() as Lead | undefined) : undefined;
 
     // ── Cliente: se reconoce por el número; si no existe, entra como prospecto.
     let customer: Customer;
+    let customerRef: DocumentReference;
     let newCustomer = false;
     if (custSnap.empty) {
-      const ref = org.collection("customers").doc();
+      customerRef = org.collection("customers").doc();
       newCustomer = true;
       customer = {
         ...scoped,
-        id: ref.id,
+        id: customerRef.id,
         name: m.profileName?.trim() || formatWhatsappId(m.from),
         whatsappId: m.from,
         ownerId: null,
@@ -120,45 +147,79 @@ export async function ingestInbound(db: Firestore, target: IngestTarget, m: Inbo
         updatedBy: "webhook",
       };
       customer.searchKeywords = customerKeywords(customer);
-      tx.create(ref, customer);
-      activityIn(tx, org, now, { ...scoped, kind: "cliente.creado", customerId: ref.id, conversationId, summary: "Cliente creado desde WhatsApp" });
     } else {
-      const doc = custSnap.docs[0];
-      customer = { ...(doc.data() as Customer), id: doc.id };
-      if (!customer.lastContactAt || customer.lastContactAt < m.timestamp) {
-        tx.update(doc.ref, { lastContactAt: m.timestamp });
-      }
+      customerRef = custSnap.docs[0].ref;
+      customer = { ...(custSnap.docs[0].data() as Customer), id: custSnap.docs[0].id };
     }
 
+    // ── ¿Quién atiende?
+    const reopened = !!previous && !OPEN.has(previous.status);
+    const currentAssignee = previous?.assigneeId ? memberById.get(previous.assigneeId) : undefined;
     const owner = customer.ownerId ? memberById.get(customer.ownerId) : undefined;
+    let assigneeId: string | null = previous?.assigneeId ?? null;
+    let reason: Assignment["reason"] | undefined;
+
+    if (!currentAssignee) {
+      // Sin responsable, o el que tenía fue dado de baja (no figura entre los activos).
+      if (owner && owner.role !== "repartidor" && owner.role !== "solo_lectura") {
+        assigneeId = owner.id;
+        reason = previous?.assigneeId ? "reasignacion" : "cliente_existente";
+      } else if (settings.autoAssign) {
+        const pick = pickAssignee(members, { useZones: settings.useZones, zoneFallback: settings.zoneFallback, zoneId: customer.zoneId });
+        assigneeId = pick?.id ?? null;
+        reason = pick?.reason;
+      } else {
+        assigneeId = null;
+      }
+      if (previous?.assigneeId && assigneeId === previous.assigneeId) reason = undefined;
+    }
+    const assignee = assigneeId ? memberById.get(assigneeId) : undefined;
+    const changedAssignee = (previous?.assigneeId ?? null) !== assigneeId;
+
+    // ── Cliente: alta, último contacto y, si no tenía, responsable.
+    const takesCustomer = !!assignee && !owner && (reason === "regla_zona" || reason === "regla_nuevo");
+    if (newCustomer) {
+      tx.create(customerRef, { ...customer, ownerId: takesCustomer ? assignee!.id : null });
+      activityIn(tx, org, now, { ...scoped, kind: "cliente.creado", customerId: customer.id, conversationId, summary: "Cliente creado desde WhatsApp" });
+    } else {
+      const patch = {
+        ...(!customer.lastContactAt || customer.lastContactAt < m.timestamp ? { lastContactAt: m.timestamp } : {}),
+        ...(takesCustomer ? { ownerId: assignee!.id, updatedAt: now, updatedBy: "system" } : {}),
+      };
+      // Un mensaje que llega fuera de orden puede no cambiar nada del cliente.
+      if (Object.keys(patch).length) tx.update(customerRef, patch);
+    }
+    if (takesCustomer) {
+      activityIn(tx, org, now, { ...scoped, kind: "cliente.asignado", customerId: customer.id, conversationId, actorId: "system", summary: `Cliente asignado a ${assignee!.displayName} (${REASON_TEXT[reason!]})`, data: { ownerId: { before: customer.ownerId ?? null, after: assignee!.id } } });
+    }
+    // Turno rotativo: quien recibe por regla pasa al final de la fila.
+    if (takesCustomer) tx.update(org.collection("members").doc(assignee!.id), { lastAutoAssignedAt: now });
+
     const preview = messagePreview(m);
     const isLead = customer.stage === "prospecto";
-    let newConversation = false;
-    let reopened = false;
-    let assigneeId: string | null;
+    const newConversation = !previous;
+    let leadId = previous?.leadId;
 
-    if (!convSnap.exists) {
-      // ── Conversación nueva. Si el cliente ya tiene vendedor, queda con él.
-      newConversation = true;
-      assigneeId = owner ? owner.id : null;
-      let leadId: string | undefined;
+    if (newConversation) {
       if (isLead) {
-        const leadRef = org.collection("leads").doc();
-        leadId = leadRef.id;
+        const ref = org.collection("leads").doc();
+        leadId = ref.id;
+        const status = assigneeId ? "asignado" : "recibido";
         const lead: Lead = {
           ...scoped,
-          id: leadRef.id,
+          id: ref.id,
           customerId: customer.id,
           conversationId,
           source: "whatsapp",
-          status: assigneeId ? "asignado" : "recibido",
+          status,
+          statusAt: { recibido: now, ...(assigneeId ? { asignado: now } : {}) },
           ownerId: assigneeId ?? undefined,
           createdAt: now,
           createdBy: "webhook",
           updatedAt: now,
           updatedBy: "webhook",
         };
-        tx.create(leadRef, lead);
+        tx.create(ref, lead);
         activityIn(tx, org, now, { ...scoped, kind: "lead.recibido", customerId: customer.id, conversationId, leadId, summary: "Lead recibido por WhatsApp" });
       }
       const conversation: Conversation = {
@@ -183,21 +244,32 @@ export async function ingestInbound(db: Firestore, target: IngestTarget, m: Inbo
       };
       tx.create(convRef, conversation);
       activityIn(tx, org, now, { ...scoped, kind: "conversacion.iniciada", customerId: customer.id, conversationId, leadId, summary: "Inició una conversación por WhatsApp" });
-      if (owner) {
-        const aRef = org.collection("assignments").doc();
-        const assignment: Assignment = { ...scoped, id: aRef.id, conversationId, toId: owner.id, reason: "cliente_existente", byId: "system", at: now };
-        tx.create(aRef, assignment);
-        activityIn(tx, org, now, { ...scoped, kind: "conversacion.asignada", customerId: customer.id, conversationId, summary: `Asignada a ${owner.displayName} (responsable del cliente)` });
-      }
-    } else {
-      const conv = convSnap.data() as Conversation;
-      assigneeId = conv.assigneeId ?? null;
-      if (!OPEN.has(conv.status)) {
-        reopened = true;
-        activityIn(tx, org, now, { ...scoped, kind: "conversacion.reabierta", customerId: customer.id, conversationId, summary: "El cliente volvió a escribir: conversación reabierta" });
+    } else if (reopened) {
+      activityIn(tx, org, now, { ...scoped, kind: "conversacion.reabierta", customerId: customer.id, conversationId, leadId, summary: "El cliente volvió a escribir: conversación reabierta" });
+    }
+
+    // ── Registro de la asignación automática.
+    if (changedAssignee && assignee && reason) {
+      const aRef = org.collection("assignments").doc();
+      const assignment: Assignment = { ...scoped, id: aRef.id, conversationId, fromId: previous?.assigneeId ?? undefined, toId: assignee.id, reason, byId: "system", at: now };
+      tx.create(aRef, assignment);
+      activityIn(tx, org, now, {
+        ...scoped,
+        kind: "conversacion.asignada",
+        customerId: customer.id,
+        conversationId,
+        leadId,
+        actorId: "system",
+        summary: `Asignada a ${assignee.displayName} (${REASON_TEXT[reason]})`,
+        data: { assigneeId: { before: previous?.assigneeId ?? null, after: assignee.id }, reason },
+      });
+      if (leadRef && previousLead) {
+        const status = advanceLead(previousLead.status, "asignado");
+        tx.update(leadRef, { ownerId: assignee.id, status, [`statusAt.${status}`]: previousLead.statusAt?.[status] ?? now, updatedAt: now, updatedBy: "system" });
       }
     }
 
+    // ── Mensaje.
     const attachments: MessageAttachment[] | undefined = m.media
       ? [{ mediaId: m.media.mediaId, mimeType: m.media.mimeType, fileName: m.media.fileName, caption: m.media.caption, ...target.storedMedia }]
       : undefined;
@@ -219,7 +291,7 @@ export async function ingestInbound(db: Firestore, target: IngestTarget, m: Inbo
     };
     tx.create(msgRef, message);
 
-    const previous = convSnap.data() as Conversation | undefined;
+    // ── Conversación.
     const wasAwaiting = !!previous?.awaitingReply && !reopened;
     const isLatest = !previous?.lastMessageAt || previous.lastMessageAt <= m.timestamp;
     const lastInboundAt = Math.max(previous?.lastInboundAt ?? 0, m.timestamp);
@@ -228,19 +300,25 @@ export async function ingestInbound(db: Firestore, target: IngestTarget, m: Inbo
       lastInboundAt,
       serviceWindowEndsAt: lastInboundAt + SERVICE_WINDOW_MS,
       awaitingReply: true,
+      // La demora se mide desde el primer mensaje que quedó sin respuesta.
+      ...(wasAwaiting ? {} : { awaitingSince: m.timestamp, slaAlertedAt: FieldValue.delete() }),
       unreadCount: FieldValue.increment(1),
       ...(reopened ? { status: "pendiente", closedAt: FieldValue.delete() } : {}),
+      ...(changedAssignee ? { assigneeId } : {}),
       updatedAt: now,
       updatedBy: "webhook",
     });
 
     // ── Avisos: al responsable cuando la conversación pasa a "esperando
-    // respuesta"; si nadie la tiene, a administradores y supervisores.
+    // respuesta" o cuando se le acaba de asignar; si nadie la tiene, a
+    // administradores y supervisores.
     const link = `/inbox?c=${conversationId}`;
-    if (!wasAwaiting) {
-      const assignee = assigneeId ? memberById.get(assigneeId) : undefined;
+    if (!wasAwaiting || changedAssignee) {
       if (assignee) {
-        notifyIn(tx, org, target, [assignee], newConversation && isLead ? "nuevo_lead" : "nuevo_mensaje", { title: `${customer.name}: ${preview}`, link }, now);
+        const reassigned = changedAssignee && !newConversation;
+        const type: NotificationType = newConversation && isLead ? "nuevo_lead" : reassigned ? "nueva_asignacion" : "nuevo_mensaje";
+        const title = newConversation && isLead ? `Nuevo lead: ${customer.name}` : reassigned ? `Te asignaron la conversación con ${customer.name}` : `${customer.name}: ${preview}`;
+        notifyIn(tx, org, target, [assignee], type, { title, body: preview, link }, now);
       } else {
         const managers = members.filter((x) => x.role === "admin" || x.role === "supervisor");
         notifyIn(tx, org, target, managers, newConversation && isLead ? "nuevo_lead" : "cliente_esperando", {
@@ -251,7 +329,7 @@ export async function ingestInbound(db: Firestore, target: IngestTarget, m: Inbo
       }
     }
 
-    return { ...base, duplicate: false, customerId: customer.id, newCustomer, newConversation, reopened };
+    return { ...base, duplicate: false, customerId: customer.id, newCustomer, newConversation, reopened, assigneeId, assignmentReason: changedAssignee ? reason : undefined };
   });
 }
 

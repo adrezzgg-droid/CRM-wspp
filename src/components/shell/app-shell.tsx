@@ -43,6 +43,8 @@ export interface ShellUser {
   displayName: string;
   email: string;
   roleLabel: string;
+  /** Solo para roles que atienden clientes: disponibilidad para asignación automática. */
+  available?: boolean;
 }
 
 export interface ShellOrg {

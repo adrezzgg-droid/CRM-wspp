@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { doc, onSnapshot } from "firebase/firestore";
 import Link from "next/link";
 import { ExternalLink, Pencil, X } from "lucide-react";
-import type { Conversation, Customer } from "@/types/model";
-import { CONVERSATION_STATUS_LABELS } from "@/types/model";
+import type { Conversation, Customer, Lead } from "@/types/model";
+import { CONVERSATION_STATUS_LABELS, orgPath } from "@/types/model";
+import { firebaseClient } from "@/lib/firebase/client";
+import { useFirebaseSession } from "@/components/providers/firebase-session";
+import { LeadTrace } from "@/components/leads/lead-trace";
 import { CONVERSATION_PRIORITIES } from "@/lib/schemas";
 import { formatWhatsappId } from "@/lib/phone";
 import { api, ApiClientError, errorMessage } from "@/lib/api-client";
@@ -29,7 +33,9 @@ export function ConversationPanel({
   names: Map<string, string>;
   onClose: () => void;
 }) {
+  const { ready } = useFirebaseSession();
   const [customer, setCustomer] = useState<CustomerState>({ status: "loading" });
+  const [lead, setLead] = useState<Lead | null>(null);
   const [reload, setReload] = useState(0);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -52,6 +58,16 @@ export function ConversationPanel({
     };
   }, [c.customerId, c.contactName, c.customerStage, c.assigneeId, reload]);
 
+  // Lead en tiempo real (las reglas solo lo devuelven si está a cargo del usuario o es supervisor/admin).
+  useEffect(() => {
+    if (!ready || !c.leadId) return;
+    return onSnapshot(
+      doc(firebaseClient().db, orgPath(props.orgId, "leads"), c.leadId),
+      (snap) => setLead(snap.exists() ? { ...(snap.data() as Lead), id: snap.id } : null),
+      () => setLead(null),
+    );
+  }, [ready, c.leadId, props.orgId]);
+
   async function run(key: string, fn: () => Promise<unknown>) {
     setBusy(key);
     setError(null);
@@ -65,7 +81,7 @@ export function ConversationPanel({
   }
 
   const update = (body: Record<string, unknown>, key: string) => run(key, () => api("PATCH", `/api/conversations/${c.id}`, body));
-  const assign = (assigneeId: string | null) => run("assign", () => api("POST", `/api/conversations/${c.id}/assign`, { assigneeId }));
+  const assign = (body: { assigneeId?: string | null; teamId?: string | null }) => run("assign", () => api("POST", `/api/conversations/${c.id}/assign`, body));
   const tagsById = new Map(props.tags.map((t) => [t.id, t]));
   const editable = props.canEdit;
 
@@ -178,7 +194,7 @@ export function ConversationPanel({
           <label className="block">
             <span className="mb-1 block text-xs text-ink-muted">Atiende</span>
             {props.canAssign ? (
-              <select value={c.assigneeId ?? ""} disabled={busy === "assign"} onChange={(e) => assign(e.target.value || null)} className={inputClass}>
+              <select value={c.assigneeId ?? ""} disabled={busy === "assign"} onChange={(e) => assign({ assigneeId: e.target.value || null })} className={inputClass}>
                 <option value="">Sin asignar</option>
                 {c.assigneeId && !props.assignable.some((a) => a.id === c.assigneeId) && <option value={c.assigneeId}>{names.get(c.assigneeId) ?? "Otro usuario"}</option>}
                 {props.assignable.map((a) => (
@@ -191,6 +207,21 @@ export function ConversationPanel({
               <p className="rounded-lg bg-canvas px-3 py-2">{c.assigneeId ? names.get(c.assigneeId) ?? "—" : "Sin asignar"}</p>
             )}
           </label>
+
+          {props.canAssign && props.teams.length > 0 && (
+            <label className="block">
+              <span className="mb-1 block text-xs text-ink-muted">Equipo</span>
+              <select value={c.teamId ?? ""} disabled={busy === "assign"} onChange={(e) => assign({ teamId: e.target.value || null })} className={inputClass}>
+                <option value="">Sin equipo</option>
+                {c.teamId && !props.teams.some((t) => t.id === c.teamId) && <option value={c.teamId}>Otro equipo</option>}
+                {props.teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <div>
             <span className="mb-1 block text-xs text-ink-muted">Etiquetas</span>
@@ -209,6 +240,13 @@ export function ConversationPanel({
             </Button>
           )}
         </section>
+
+        {c.leadId && lead && (
+          <section className="space-y-2 border-t border-line pt-4">
+            <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Recorrido del lead</h3>
+            <LeadTrace lead={lead} timezone={props.timezone} canEdit={props.canEdit} compact />
+          </section>
+        )}
 
         <section className="space-y-2 border-t border-line pt-4">
           <h3 className="text-xs font-semibold tracking-wide text-ink-muted uppercase">Próximamente</h3>
