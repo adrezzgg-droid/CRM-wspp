@@ -118,7 +118,7 @@ export async function createOrganizationDocs(
   });
   for (const tag of DEFAULT_TAGS) batch.set(orgRef.collection("tags").doc(tag.id), { ...base, ...tag });
   batch.set(orgRef.collection("settings").doc("permissions"), { overrides: {}, updatedAt: now, updatedBy: "system" });
-  batch.set(orgRef.collection("settings").doc("general"), { businessHours: null, updatedAt: now, updatedBy: "system" });
+  batch.set(orgRef.collection("settings").doc("general"), { defaultCountryCode: "54", businessHours: null, updatedAt: now, updatedBy: "system" });
   const audit = orgRef.collection("auditLogs").doc();
   batch.set(audit, {
     id: audit.id,

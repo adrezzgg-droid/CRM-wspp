@@ -77,7 +77,7 @@ export const DEFAULT_POLICY: Record<Role, RolePolicy> = {
     dashboard: { actions: READ, scope: "equipo" },
     mi_dia: { actions: READ, scope: "propio" },
     inbox: { actions: ["ver", "editar", "asignar"], scope: "equipo" },
-    clientes: { actions: RW, scope: "equipo" },
+    clientes: { actions: ["ver", "crear", "editar", "asignar"], scope: "equipo" },
     pipeline: { actions: RW, scope: "equipo" },
     pedidos: { actions: RW, scope: "equipo" },
     productos: { actions: READ, scope: "todo" },

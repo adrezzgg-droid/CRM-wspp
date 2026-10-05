@@ -72,3 +72,10 @@ test("isRole valida entradas desconocidas", () => {
   assert.equal(isRole("root"), false);
   assert.equal(isRole(undefined), false);
 });
+
+test("el supervisor reasigna clientes de su equipo; el vendedor no", () => {
+  assert.equal(can("supervisor", "clientes", "asignar"), true);
+  assert.equal(scopeOf("supervisor", "clientes"), "equipo");
+  assert.equal(can("vendedor", "clientes", "asignar"), false);
+  assert.equal(can("vendedor", "clientes", "eliminar"), false);
+});

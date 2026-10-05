@@ -2,15 +2,18 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { requireSession } from "@/server/auth/guards";
 import { adminDb } from "@/server/firebase/admin";
+import { can } from "@/server/permissions/matrix";
+import type { Session } from "@/server/auth/session";
+import { getGeneralSettings, getMembers, getTeams, getZones, scopeContext } from "@/server/org/data";
 import { CONFIG_SECTIONS, canSee } from "@/lib/navigation";
 import { COLLECTIONS, type Organization } from "@/types/model";
 import { ModulePending } from "@/components/ui/page";
+import { UsersManager } from "../sections/users-manager";
+import { RolesEditor } from "../sections/roles-editor";
+import { TeamsManager } from "../sections/teams-manager";
+import { GeneralForm, OrganizationForm } from "../sections/settings-forms";
 
 const PENDING_ITEMS: Record<string, string[]> = {
-  general: ["Idioma, zona horaria y moneda", "Horario de atención", "Preferencias del CRM"],
-  usuarios: ["Invitar usuarios por email", "Asignar rol, equipo y zonas", "Dar de baja sin perder el historial"],
-  roles: ["Matriz de permisos por rol", "Permisos configurables por empresa", "El administrador no puede ser degradado"],
-  equipos: ["Equipos comerciales", "Supervisores y miembros", "Alcance de visibilidad por equipo"],
   zonas: ["Zonas y localidades", "Vendedor responsable por zona", "Asignación automática por zona"],
   whatsapp: ["Número conectado, Phone Number ID y WABA ID", "Access Token cifrado en el servidor", "URL y Verify Token del webhook", "Estado de conexión y prueba"],
   plantillas: ["Plantillas con variables {{nombre}}, {{pedido}}…", "Categorías de Meta", "Estado de aprobación en Meta"],
@@ -41,46 +44,68 @@ export default async function ConfigSectionPage({ params }: PageProps<"/configur
         <h2 className="text-lg font-semibold">{section.label}</h2>
         <p className="text-sm text-ink-muted">{section.description}</p>
       </div>
-      {section.slug === "empresa" ? (
-        <OrganizationDetails orgId={session.orgId} />
-      ) : (
-        <ModulePending phase={section.phase} items={PENDING_ITEMS[section.slug] ?? []} />
-      )}
+      <SectionBody slug={section.slug} phase={section.phase} session={session} />
     </div>
   );
 }
 
-const dateFormat = new Intl.DateTimeFormat("es-AR", { dateStyle: "long" });
+async function SectionBody({ slug, phase, session }: { slug: string; phase: number; session: Session }) {
+  const editConfig = can(session.role, "configuracion", "editar", session.overrides);
 
-async function OrganizationDetails({ orgId }: { orgId: string }) {
-  const snap = await adminDb().collection(COLLECTIONS.organizations).doc(orgId).get();
-  const org = snap.data() as Organization | undefined;
-  if (!org) notFound();
-
-  const rows: [string, React.ReactNode][] = [
-    ["Nombre", org.name],
-    ["Identificador", <code key="id" className="font-mono text-xs">{orgId}</code>],
-    ["Tipo", org.isDemo ? "Demostración" : "Producción"],
-    ["Plan", org.plan],
-    ["Estado", org.status === "active" ? "Activa" : "Suspendida"],
-    ["Zona horaria", org.timezone],
-    ["Moneda", org.currency],
-    ["Alta", org.createdAt ? dateFormat.format(org.createdAt) : "—"],
-  ];
-
-  return (
-    <section className="overflow-hidden rounded-xl border border-line bg-surface">
-      <dl className="divide-y divide-line">
-        {rows.map(([label, value]) => (
-          <div key={label} className="grid gap-1 px-4 py-3 sm:grid-cols-3 sm:gap-4">
-            <dt className="text-sm text-ink-muted">{label}</dt>
-            <dd className="text-sm sm:col-span-2">{value}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="border-t border-line bg-canvas px-4 py-3 text-xs text-ink-muted">
-        La edición de estos datos llega en la Fase 2.
-      </p>
-    </section>
-  );
+  switch (slug) {
+    case "empresa": {
+      const org = (await adminDb().collection(COLLECTIONS.organizations).doc(session.orgId).get()).data() as Organization;
+      return <OrganizationForm initial={{ name: org.name, timezone: org.timezone, currency: org.currency }} readOnly={!editConfig} />;
+    }
+    case "general": {
+      const g = await getGeneralSettings(session.orgId);
+      return <GeneralForm initial={{ defaultCountryCode: g.defaultCountryCode, businessHours: g.businessHours }} readOnly={!editConfig} />;
+    }
+    case "usuarios": {
+      const [members, teams, zones] = await Promise.all([getMembers(session.orgId), getTeams(session.orgId), getZones(session.orgId)]);
+      return (
+        <UsersManager
+          members={members.map((m) => ({
+            id: m.id,
+            displayName: m.displayName,
+            email: m.email,
+            phone: m.phone,
+            role: m.role,
+            teamIds: m.teamIds ?? [],
+            zoneIds: m.zoneIds ?? [],
+            active: m.active,
+            available: m.available,
+          }))}
+          teams={teams.map((t) => ({ id: t.id, name: t.name }))}
+          zones={zones.map((z) => ({ id: z.id, name: z.name }))}
+          currentUid={session.uid}
+          currentRole={session.role}
+          canCreate={can(session.role, "usuarios", "crear", session.overrides)}
+          canEdit={can(session.role, "usuarios", "editar", session.overrides)}
+          canDeactivate={can(session.role, "usuarios", "eliminar", session.overrides)}
+        />
+      );
+    }
+    case "roles":
+      return <RolesEditor overrides={session.overrides} readOnly={session.role !== "admin"} />;
+    case "equipos": {
+      const [members, teams, ctx] = await Promise.all([getMembers(session.orgId), getTeams(session.orgId), scopeContext(session, "equipos")]);
+      // Alcance "equipo": el supervisor solo ve los equipos que lidera.
+      const visible = ctx.scope === "todo" ? teams : teams.filter((t) => t.leaderIds.includes(session.uid));
+      return (
+        <TeamsManager
+          teams={visible.map((t) => ({ id: t.id, name: t.name, leaderIds: t.leaderIds, memberIds: t.memberIds }))}
+          people={members
+            .filter((m) => m.active)
+            .sort((a, b) => a.displayName.localeCompare(b.displayName, "es"))
+            .map((m) => ({ id: m.id, name: m.displayName, canLead: m.role === "admin" || m.role === "supervisor" }))}
+          names={Object.fromEntries(members.map((m) => [m.id, m.displayName]))}
+          canEdit={can(session.role, "equipos", "editar", session.overrides) && can(session.role, "equipos", "crear", session.overrides)}
+          canDelete={can(session.role, "equipos", "eliminar", session.overrides)}
+        />
+      );
+    }
+    default:
+      return <ModulePending phase={phase} items={PENDING_ITEMS[slug] ?? []} />;
+  }
 }

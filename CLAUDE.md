@@ -25,27 +25,39 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - Nada de maquetas: cada pantalla lee y escribe datos reales (los datos demo solo sirven para mostrar el inicio).
 - Registrar en `activities` (negocio) y `auditLogs` (seguridad/configuración) solo por inserción; nunca perder historial.
 - Fechas: epoch ms (`number`) en Firestore, no `Timestamp` (ver comentario en `src/types/model.ts`).
-- Los tests unitarios usan `node:test` sin dependencias. Los módulos que prueban (`matrix`, `navigation`, `origin`, `org/defaults`) son puros y se importan entre sí con ruta relativa y extensión `.ts`; no usar `@/` ni `server-only` en ellos.
+- Los tests unitarios usan `node:test` sin dependencias. Los módulos que prueban (`src/lib/*` salvo `api-client` y `firebase`, `src/server/permissions/*`, `members/guards`, `org/defaults`) son puros y se importan entre sí con ruta relativa y extensión `.ts`; no usar `@/` ni `server-only` en ellos.
 - Toda ruta nueva de la app va en `src/lib/navigation.ts` con su recurso de la matriz (un test falla si hay una carpeta en `src/app/(app)/` sin mapear) y la página llama a `requireAccess()`.
-- Todo endpoint autenticado se arma con `apiRoute()` (`src/server/api/handler.ts`): CSRF por Origin, sesión, permiso, zod.
+- Todo endpoint autenticado se arma con `apiRoute()` (`src/server/api/handler.ts`): CSRF por Origin, sesión, zod. La autorización fina (permiso + alcance propio/equipo/todo) vive en los servicios (`src/server/*/service.ts`), que usan las páginas y la API por igual.
+- Documento fuera del alcance del usuario = 404 (no se revela que existe).
+- Cada cambio se escribe junto con su `activities`/`auditLogs` en el mismo batch/transacción (`recordActivityIn`, `recordAuditIn`).
+- Solo un usuario con rol `admin` crea/modifica admins y cambia los permisos por rol (evita escalada de privilegios).
+- Clientes: `ownerId` es `null` (no ausente) si no tiene responsable; `whatsappId` es único por organización; `searchKeywords` se recalcula en cada escritura (`src/lib/search.ts`).
+- Valores compartidos entre Server y Client Components no pueden vivir en un módulo `"use client"` (ver `components/ui/styles.ts`).
+- Si el dev server da 404 en rutas nuevas, borrar `.next/dev` (caché de Turbopack).
 
 ## Comandos
 
 - `npm run emulators` — Auth + Firestore locales (proyecto `demo-crm-whatsapp`, no requiere cuenta).
-- `npm run seed:demo` — organización demo con un usuario por rol (contraseña en `scripts/seed-demo.ts`, solo emulador).
+- `npm run seed:demo` — reinicia la organización demo: un usuario por rol y 12 clientes (contraseña en `scripts/seed-demo.ts`, solo emulador).
 - `npm run org:crear -- --nombre "..." --admin-email ... --admin-nombre "..."` — organización real.
-- `npm run dev` · `npm run check` (typecheck + lint + test + build) · `npm run test:rules` (reglas en emulador).
+- `npm run dev` · `npm run check` (typecheck + lint + test + build).
+- `npm run test:rules` — reglas en emulador (con los emuladores de desarrollo APAGADOS: usa los mismos puertos).
+- `npm run test:api` — API de punta a punta (con emuladores + seed + dev corriendo).
 
 ## Estado
 
-Fase 1 cerrada (pendiente de confirmación del dueño para pasar a la Fase 2):
-Next.js 16 + Tailwind 4, Firebase Admin/cliente, login con sesión por cookie httpOnly y custom claims,
-validación por petición contra el miembro en Firestore (baja o cambio de rol = sin acceso), proxy de
-rutas, guards de página y de API, layout responsive con sidebar filtrada por permisos, banner DEMO,
-campana de notificaciones en tiempo real, páginas base de cada módulo, `firestore.indexes.json`,
-31 pruebas de reglas con emulador, 24 tests unitarios.
+Fase 1 cerrada: Next.js 16 + Tailwind 4, Firebase, login con sesión por cookie y custom claims, proxy,
+guards, layout responsive con sidebar por permisos, banner DEMO, notificaciones en tiempo real.
 
-Cambios sobre lo heredado: `Order.driverId` (el repartidor no podía ver sus pedidos porque la regla miraba
-`sellerId`) y la marca de lectura de notificaciones exige booleano.
+Fase 2 cerrada (pendiente de confirmación del dueño para pasar a la Fase 3):
+clientes (listado con búsqueda/filtros/paginación y alcance por rol, alta/edición, baja lógica, ficha 360°,
+notas, contactos, historial con antes/después), usuarios (alta con enlace de acceso, edición, baja/reactivación),
+roles y permisos editables por empresa, equipos, empresa y configuración general (país por defecto, horario).
+Pruebas: 59 unitarias, 32 de reglas, 17 de API.
+
+Cambios sobre lo heredado: `Order.driverId`; marca de lectura de notificaciones exige booleano; el supervisor
+tiene `asignar` sobre clientes (equipo); notas, contactos y actividades ya no son legibles por el vendedor desde
+el navegador (se las da el servidor filtradas); `Customer` suma `archived`, `archivedAt`, `searchKeywords` y
+`ownerId: string | null`.
 
 Especificación completa del producto: `docs/ESPECIFICACION.md`.

@@ -99,7 +99,11 @@ export interface Customer extends Audited, TenantScoped {
   locality?: string;
   customerType?: string;
   industry?: string; // rubro
-  ownerId?: Id; // vendedor responsable
+  /**
+   * Vendedor responsable. `null` (y no ausente) cuando no tiene: así se puede
+   * consultar "sin asignar" con `where("ownerId", "==", null)`.
+   */
+  ownerId: Id | null;
   stage: CustomerStage;
   needsReactivation: boolean;
   tagIds: Id[];
@@ -109,6 +113,29 @@ export interface Customer extends Audited, TenantScoped {
   stats: { totalPurchased: number; ordersCount: number; avgTicket: number };
   /** Id del cliente en sistemas externos (p.ej. app de gestión). */
   externalRefs?: Record<string, string>;
+  /** Baja lógica: el cliente y todo su historial se conservan. */
+  archived: boolean;
+  archivedAt?: Timestamp;
+  /** Prefijos normalizados de nombre, empresa, teléfono, etc. (búsqueda). */
+  searchKeywords: string[];
+}
+
+export const CUSTOMER_STAGE_LABELS: Record<CustomerStage, string> = {
+  prospecto: "Prospecto",
+  cliente_nuevo: "Cliente nuevo",
+  cliente_activo: "Cliente activo",
+  cliente_inactivo: "Cliente inactivo",
+  cliente_perdido: "Cliente perdido",
+};
+
+/** `organizations/{orgId}/settings/general` */
+export interface GeneralSettings {
+  /** Código de país para normalizar teléfonos cargados sin prefijo (AR = "54"). */
+  defaultCountryCode: string;
+  /** Horario de atención; se usa para medir tiempos de respuesta. */
+  businessHours: { days: number[]; from: string; to: string } | null;
+  updatedAt: Timestamp;
+  updatedBy: Id | "system";
 }
 
 export interface Contact extends Audited, TenantScoped {

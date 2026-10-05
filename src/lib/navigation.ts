@@ -50,8 +50,8 @@ export interface ConfigSection {
 }
 
 export const CONFIG_SECTIONS: readonly ConfigSection[] = [
-  { slug: "general", label: "General", description: "Preferencias generales del CRM.", resource: "configuracion", phase: 2 },
-  { slug: "empresa", label: "Empresa", description: "Datos de la organización.", resource: "configuracion", phase: 1 },
+  { slug: "general", label: "General", description: "País por defecto y horario de atención.", resource: "configuracion", phase: 2 },
+  { slug: "empresa", label: "Empresa", description: "Nombre, zona horaria y moneda.", resource: "configuracion", phase: 2 },
   { slug: "usuarios", label: "Usuarios", description: "Altas, bajas y roles del equipo.", resource: "usuarios", phase: 2 },
   { slug: "roles", label: "Roles y permisos", description: "Qué puede hacer cada rol.", resource: "usuarios", phase: 2 },
   { slug: "equipos", label: "Equipos", description: "Equipos comerciales y supervisores.", resource: "equipos", phase: 2 },

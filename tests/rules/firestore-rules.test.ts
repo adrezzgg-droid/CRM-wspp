@@ -155,6 +155,15 @@ describe("vendedor: solo lo propio", () => {
     await assertFails(getDoc(doc(db(), p("tasks/t1"))));
   });
 
+  test("no lee notas, contactos ni historial de toda la empresa (se los da el servidor filtrados)", async () => {
+    await assertFails(getDocs(collection(db(), p("notes"))));
+    await assertFails(getDocs(collection(db(), p("contacts"))));
+    await assertFails(getDocs(collection(db(), p("activities"))));
+    const sup = as("sup", "supervisor");
+    await assertSucceeds(getDocs(collection(sup, p("notes"))));
+    await assertSucceeds(getDocs(collection(sup, p("activities"))));
+  });
+
   test("solo su propio miembro; nada de auditoría, automatizaciones ni WhatsApp", async () => {
     await assertSucceeds(getDoc(doc(db(), p("members/vend1"))));
     await assertFails(getDoc(doc(db(), p("members/vend2"))));

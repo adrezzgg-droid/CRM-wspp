@@ -37,6 +37,10 @@ service cloud.firestore {
       return data.get('assigneeId', data.get('ownerId', data.get('sellerId', ''))) == request.auth.uid;
     }
 
+    // Ven toda la organización desde el navegador. El vendedor no: lo suyo le
+    // llega ya filtrado por el servidor (notas, contactos, historial).
+    function seesWholeOrg() { return isAdmin() || isSupervisor() || isReadOnly(); }
+
     // Visibilidad con alcance: admin/supervisor/solo lectura ven todo lo de la
     // organización (el filtrado fino por equipo lo aplica el servidor); el
     // vendedor únicamente lo propio.
@@ -68,7 +72,7 @@ service cloud.firestore {
         allow write: if false;
       }
       match /contacts/{id} {
-        allow read: if inOrg(orgId) && canSeeCommercial();
+        allow read: if inOrg(orgId) && seesWholeOrg();
         allow write: if false;
       }
       match /leads/{id} {
@@ -108,12 +112,12 @@ service cloud.firestore {
         allow write: if false;
       }
       match /notes/{id} {
-        allow read: if inOrg(orgId) && canSeeCommercial();
+        allow read: if inOrg(orgId) && seesWholeOrg();
         allow write: if false;
       }
 
       match /activities/{id} {
-        allow read: if inOrg(orgId) && canSeeCommercial();
+        allow read: if inOrg(orgId) && seesWholeOrg();
         allow write: if false;
       }
       match /auditLogs/{id} {

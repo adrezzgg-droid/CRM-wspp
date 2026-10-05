@@ -8,6 +8,9 @@
  */
 import type { Firestore } from "firebase-admin/firestore";
 import type { Role } from "../src/server/permissions/matrix.ts";
+import type { Customer, CustomerStage } from "../src/types/model.ts";
+import { customerKeywords } from "../src/lib/search.ts";
+import { toWhatsappId } from "../src/lib/phone.ts";
 import { createOrganizationDocs, ensureUser, initAdmin, isEmulator, parseArgs, upsertMember } from "./lib/provision.ts";
 
 const ORG_ID = "demo";
@@ -57,7 +60,9 @@ async function seedZonesAndTeam(db: Firestore, uids: Record<string, string>) {
 }
 
 async function seedNotifications(db: Firestore, uids: Record<string, string>) {
+  const old = await db.collection(`organizations/${ORG_ID}/notifications`).get();
   const batch = db.batch();
+  old.docs.forEach((d) => batch.delete(d.ref));
   for (const u of USERS.filter((x) => x.zoneIds?.length)) {
     const ref = db.collection(`organizations/${ORG_ID}/notifications`).doc();
     batch.set(ref, {
@@ -71,6 +76,71 @@ async function seedNotifications(db: Firestore, uids: Record<string, string>) {
       createdAt: Date.now(),
     });
   }
+  await batch.commit();
+}
+
+/** Clientes de ejemplo: [nombre, empresa, whatsapp, rubro, barrio, zona, responsable, etapa, etiquetas, reactivar] */
+const CUSTOMERS: [string, string, string, string, string, string, string | null, CustomerStage, string[], boolean][] = [
+  ["José Fernández", "Pollería Don José", "351 555 1234", "Pollería", "Güemes", "centro", "vendedor1", "cliente_activo", ["polleria", "cliente_activo"], false],
+  ["Laura Medina", "Almacén La Esquina", "351 555 2345", "Almacén", "Alberdi", "centro", "vendedor1", "cliente_activo", ["almacen"], false],
+  ["Ricardo Sosa", "Parrilla El Fogón", "351 555 3456", "Restaurante", "Nueva Córdoba", "centro", "vendedor1", "cliente_nuevo", ["restaurante", "nuevo"], false],
+  ["Marta López", "Despensa Marta", "351 555 4567", "Almacén", "San Vicente", "centro", "vendedor1", "cliente_inactivo", ["almacen", "reactivar"], true],
+  ["Diego Romero", "", "351 555 5678", "Restaurante", "Centro", "centro", "vendedor1", "prospecto", ["potencial"], false],
+  ["Carolina Vega", "Mayorista Norte", "3543 44 1122", "Mayorista", "Villa Allende", "norte", "vendedor2", "cliente_activo", ["mayorista"], false],
+  ["Pablo Giménez", "Rotisería Pablo", "3543 44 2233", "Rotisería", "Mendiolaza", "norte", "vendedor2", "cliente_nuevo", ["nuevo"], false],
+  ["Silvia Ortiz", "Super Ortiz", "3547 55 3344", "Almacén", "Alta Gracia", "sur", "vendedor2", "cliente_perdido", ["almacen"], false],
+  ["Hernán Ruiz", "Bar La Plaza", "3547 55 4455", "Restaurante", "Alta Gracia", "sur", "vendedor2", "prospecto", ["restaurante", "urgente"], false],
+  ["Valeria Castro", "Pollería Valeria", "351 555 6789", "Pollería", "Cofico", "centro", null, "prospecto", ["polleria", "nuevo"], false],
+  ["Gustavo Molina", "", "351 555 7890", "", "General Paz", "centro", null, "prospecto", ["nuevo"], false],
+  ["Natalia Paz", "Kiosco Natalia", "3543 44 5566", "Kiosco", "Villa Allende", "norte", null, "prospecto", [], false],
+];
+
+async function seedCustomers(db: Firestore, uids: Record<string, string>) {
+  const col = db.collection(`organizations/${ORG_ID}/customers`);
+  // Reinicio: se borran los datos comerciales demo anteriores (solo en la org demo).
+  for (const name of ["customers", "activities", "notes", "contacts"]) {
+    const old = await db.collection(`organizations/${ORG_ID}/${name}`).get();
+    for (let i = 0; i < old.docs.length; i += 400) {
+      const del = db.batch();
+      old.docs.slice(i, i + 400).forEach((d) => del.delete(d.ref));
+      await del.commit();
+    }
+  }
+  const batch = db.batch();
+  const now = Date.now();
+  CUSTOMERS.forEach(([name, company, phone, industry, neighborhood, zoneId, owner, stage, tagIds, reactivar], i) => {
+    const ref = col.doc(`demo-cliente-${i + 1}`);
+    const at = now - (CUSTOMERS.length - i) * 3_600_000;
+    const ownerId = owner ? uids[owner] : null;
+    const customer: Customer = {
+      id: ref.id,
+      orgId: ORG_ID,
+      isDemo: true,
+      name,
+      company: company || undefined,
+      phone,
+      whatsappId: toWhatsappId(phone, "54") ?? undefined,
+      industry: industry || undefined,
+      neighborhood,
+      locality: ZONES.find((z) => z.id === zoneId)?.localities[0],
+      zoneId,
+      ownerId,
+      stage,
+      needsReactivation: reactivar,
+      tagIds,
+      stats: { totalPurchased: 0, ordersCount: 0, avgTicket: 0 },
+      archived: false,
+      searchKeywords: [],
+      createdAt: at,
+      createdBy: ownerId ?? "system",
+      updatedAt: at,
+      updatedBy: ownerId ?? "system",
+    };
+    customer.searchKeywords = customerKeywords(customer);
+    batch.set(ref, customer);
+    const act = db.collection(`organizations/${ORG_ID}/activities`).doc();
+    batch.set(act, { id: act.id, orgId: ORG_ID, isDemo: true, at, kind: "cliente.creado", customerId: ref.id, actorId: ownerId ?? "system", summary: "Cliente creado (datos de demostración)" });
+  });
   await batch.commit();
 }
 
@@ -96,8 +166,17 @@ for (const u of USERS) {
     teamIds: u.role === "vendedor" || u.role === "supervisor" ? ["comercial"] : [],
   });
 }
+// Usuarios demo que no están en la lista (p.ej. creados por las pruebas): se eliminan.
+const keep = new Set(Object.values(uids));
+for (const doc of (await db.collection(`organizations/${ORG_ID}/members`).get()).docs) {
+  if (keep.has(doc.id)) continue;
+  await doc.ref.delete();
+  const user = await auth.getUser(doc.id).catch(() => null);
+  if (user?.customClaims?.orgId === ORG_ID) await auth.deleteUser(doc.id);
+}
 await seedZonesAndTeam(db, uids);
 await seedNotifications(db, uids);
+await seedCustomers(db, uids);
 
 console.log(`Demo listo: "${ORG_NAME}" (${ORG_ID})`);
 for (const u of USERS) console.log(`  ${u.role.padEnd(13)} ${u.email}`);

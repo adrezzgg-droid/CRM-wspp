@@ -13,7 +13,8 @@
     "emulators": "firebase emulators:start --only auth,firestore --project demo-crm-whatsapp",
     "seed:demo": "node --env-file-if-exists=.env.local scripts/seed-demo.ts",
     "org:crear": "node --env-file-if-exists=.env.local scripts/crear-organizacion.ts",
-    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "test:api": "node --env-file-if-exists=.env.local --test tests/api/api.test.ts"
   },
   "dependencies": {
     "firebase": "^12.19.0",
