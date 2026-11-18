@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyOrderToStats, canTransition, formatOrderNumber, leadStatusForOrder, nextStatuses, orderTotal } from "./orders.ts";
+import { applyOrderToStats, canTransition, customerKindFor, formatOrderNumber, leadStatusForOrder, nextStatuses, orderTotal } from "./orders.ts";
 import { columnSummary, daysInStage, leadStatusForStage } from "./pipeline.ts";
 
 test("total con decimales sin errores de coma flotante", () => {
@@ -44,4 +44,15 @@ test("pedido y pipeline mueven el recorrido del lead", () => {
 test("resumen de columna y antigüedad", () => {
   assert.deepEqual(columnSummary([{ estimatedValue: 1000, probability: 50 }, { estimatedValue: 300, probability: 10 }]), { count: 2, total: 1300, weighted: 530 });
   assert.equal(daysInStage(0, 3 * 86_400_000 + 5), 3);
+});
+
+test("tipo de compra: primera, recurrente o reactivación", () => {
+  const stats = (ordersCount: number) => ({ ordersCount, totalPurchased: ordersCount * 1000, avgTicket: 1000 });
+  assert.equal(customerKindFor({ stage: "prospecto", needsReactivation: false, stats: stats(0) }), "nuevo");
+  assert.equal(customerKindFor({ stage: "cliente_nuevo", needsReactivation: false, stats: stats(0) }), "nuevo", "ganó una oportunidad sin pedido");
+  assert.equal(customerKindFor({ stage: "cliente_nuevo", needsReactivation: false, stats: stats(1) }), "recurrente");
+  assert.equal(customerKindFor({ stage: "cliente_activo", needsReactivation: false, stats: stats(0) }), "recurrente", "cliente cargado de antes del CRM");
+  assert.equal(customerKindFor({ stage: "cliente_activo", needsReactivation: true, stats: stats(4) }), "reactivado");
+  assert.equal(customerKindFor({ stage: "cliente_inactivo", needsReactivation: false, stats: stats(2) }), "reactivado");
+  assert.equal(customerKindFor({ stage: "cliente_perdido", needsReactivation: false, stats: stats(2) }), "reactivado");
 });

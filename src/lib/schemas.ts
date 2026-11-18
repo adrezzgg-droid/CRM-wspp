@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { ACTIONS, RESOURCES, ROLES } from "../server/permissions/matrix.ts";
 import { unknownVariables } from "./templates.ts";
+import { PERIOD_PRESETS } from "./metrics.ts";
 
 const text = (max: number, label: string) =>
   z.string().trim().max(max, `${label}: máximo ${max} caracteres`);
@@ -457,3 +458,14 @@ export const automationInput = z
   .refine((a) => a.delayMinutes === 0 || a.trigger === "mensaje_nuevo_contacto" || a.trigger === "pedido_creado", { message: "La demora solo aplica a reglas de evento", path: ["delayMinutes"] });
 
 export const automationToggleInput = z.object({ enabled: z.boolean() });
+
+// ─────────────────────────────── Dashboard ──────────────────────────────────
+
+export const dashboardQuery = z.object({
+  periodo: z.enum(PERIOD_PRESETS).default("30d"),
+  desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida").optional(),
+  hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida").optional(),
+  vendedor: id.optional(),
+  equipo: id.optional(),
+});
+export type DashboardQuery = z.infer<typeof dashboardQuery>;

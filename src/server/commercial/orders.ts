@@ -1,7 +1,7 @@
 import "server-only";
 import { FieldValue, type Query, type Transaction } from "firebase-admin/firestore";
 import type { z } from "zod";
-import type { Customer, Member, Notification, Opportunity, Order, OrderItem, OrderStatus, OutboxItem } from "@/types/model";
+import type { Customer, Lead, Member, Notification, Opportunity, Order, OrderItem, OrderStatus, OutboxItem } from "@/types/model";
 import { ORDER_STATUS_LABELS } from "@/types/model";
 import { adminDb } from "@/server/firebase/admin";
 import { ApiError } from "@/server/api/handler";
@@ -144,6 +144,21 @@ async function readOpportunityEffect(tx: Transaction, session: Session, opportun
 
 // ───────────────────────────── Alta ─────────────────────────────────────────
 
+const FINAL_LEAD_STATUSES = new Set(["venta_realizada", "cerrado", "perdido"]);
+
+/**
+ * Lead abierto más reciente del cliente. Un pedido cargado desde la lista o la
+ * ficha (sin venir de la conversación) igual cierra el recorrido del lead:
+ * sin esto la tasa de conversión dependería de dónde se cargó el pedido.
+ */
+async function openLeadOf(orgId: string, customerId: string): Promise<string | undefined> {
+  const snap = await col(orgId, "leads").where("customerId", "==", customerId).get();
+  return snap.docs
+    .map((d) => ({ ...(d.data() as Lead), id: d.id }))
+    .filter((l) => !FINAL_LEAD_STATUSES.has(l.status))
+    .sort((a, b) => b.createdAt - a.createdAt)[0]?.id;
+}
+
 export async function createOrder(session: Session, input: z.output<typeof orderInput>): Promise<Order> {
   requireOrders(session, "crear");
   if (session.role === "repartidor") throw new ApiError(403, "El repartidor no crea pedidos");
@@ -159,6 +174,7 @@ export async function createOrder(session: Session, input: z.output<typeof order
   const total = orderTotal(items);
   const status: OrderStatus = input.confirm ? "confirmado" : "borrador";
   const sellerId = session.role === "vendedor" ? session.uid : (customer.ownerId ?? session.uid);
+  const leadId = input.leadId ?? (await openLeadOf(session.orgId, customer.id));
   const ref = col(session.orgId, "orders").doc();
   const counterRef = col(session.orgId, "settings").doc("counters");
   const now = Date.now();
@@ -167,7 +183,7 @@ export async function createOrder(session: Session, input: z.output<typeof order
   await adminDb().runTransaction(async (tx) => {
     // Lecturas
     const counter = ((await tx.get(counterRef)).data()?.orders as number | undefined) ?? 0;
-    const effects = await readCommercialEffects(tx, session, { leadId: input.leadId, customerId: customer.id, convertProspect: input.confirm });
+    const effects = await readCommercialEffects(tx, session, { leadId, customerId: customer.id, convertProspect: input.confirm, purchase: input.confirm });
     const oppEffect = input.confirm ? await readOpportunityEffect(tx, session, input.opportunityId, "confirmado") : null;
     const connectors = input.confirm ? await readOutboxConnectors(tx, session.orgId) : [];
     const freshCustomer = effects.customer as Customer;
@@ -182,7 +198,7 @@ export async function createOrder(session: Session, input: z.output<typeof order
       customerName: customer.name,
       sellerId,
       conversationId: input.conversationId,
-      leadId: input.leadId,
+      leadId,
       opportunityId: input.opportunityId,
       items,
       total,
@@ -193,6 +209,7 @@ export async function createOrder(session: Session, input: z.output<typeof order
       deliveryDate: input.deliveryDate,
       notes: input.notes,
       counted: input.confirm,
+      ...(effects.customerKind ? { customerKind: effects.customerKind } : {}),
       createdAt: now,
       createdBy: session.uid,
       updatedAt: now,
@@ -232,7 +249,12 @@ export async function changeOrderStatus(session: Session, id: string, input: z.o
     const ref = col(session.orgId, "orders").doc(id);
     const fresh = (await tx.get(ref)).data() as Order;
     if (fresh.status !== order.status) throw new ApiError(409, "El pedido cambió recién. Recargá y volvé a intentar.");
-    const effects = await readCommercialEffects(tx, session, { leadId: order.leadId, customerId: order.customerId, convertProspect: input.status === "confirmado" });
+    const effects = await readCommercialEffects(tx, session, {
+      leadId: order.leadId,
+      customerId: order.customerId,
+      convertProspect: input.status === "confirmado",
+      purchase: countDelta === 1 && !order.customerKind,
+    });
     const oppEffect = await readOpportunityEffect(tx, session, order.opportunityId, input.status);
     const connectors = input.status === "confirmado" ? await readOutboxConnectors(tx, session.orgId) : [];
 
@@ -240,6 +262,7 @@ export async function changeOrderStatus(session: Session, id: string, input: z.o
       status: input.status,
       [`statusAt.${input.status}`]: now,
       counted: willCount,
+      ...(effects.customerKind ? { customerKind: effects.customerKind } : {}),
       ...(input.status === "cancelado" ? { cancelReason: input.reason } : {}),
       updatedAt: now,
       updatedBy: session.uid,

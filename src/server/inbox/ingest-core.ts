@@ -92,12 +92,15 @@ const REASON_TEXT: Record<Assignment["reason"], string> = {
   reasignacion: "reasignación",
 };
 
-export async function ingestInbound(db: Firestore, target: IngestTarget, m: InboundMessage): Promise<IngestResult> {
+/**
+ * `now` es el momento de recepción. Solo el seed del demo lo cambia (para
+ * cargar historia con fechas pasadas); el webhook y el simulador usan la hora real.
+ */
+export async function ingestInbound(db: Firestore, target: IngestTarget, m: InboundMessage, now = Date.now()): Promise<IngestResult> {
   const org = db.collection("organizations").doc(target.orgId);
   const conversationId = conversationIdFor(target.accountId, m.from);
   const convRef = org.collection("conversations").doc(conversationId);
   const msgRef = convRef.collection("messages").doc(m.wamid);
-  const now = Date.now();
 
   return db.runTransaction(async (tx) => {
     const [msgSnap, convSnap, custSnap, membersSnap, settingsSnap] = await Promise.all([

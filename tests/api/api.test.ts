@@ -667,6 +667,127 @@ describe("plantillas y automatizaciones", () => {
   });
 });
 
+describe("dashboard y métricas", () => {
+  type Kpi = { value: number | null; previous: number | null };
+  interface Dashboard {
+    scope: string;
+    kpis: Record<"leadsNew" | "sales" | "revenue" | "customersNew" | "customersReactivated" | "conversion" | "ordersCreated", Kpi>;
+    sellers: { id: string; revenue: number; leads: number }[];
+    series: { leads: number; sales: number; revenue: number }[];
+    period: { bucket: string; firstDay: string; lastDay: string };
+    error?: string;
+  }
+  const dash = async (who: Who, query = "") => {
+    const r = await call(who, "GET", `/api/dashboard${query}`);
+    return { status: r.status, data: r.data as unknown as Dashboard };
+  };
+  let product = "";
+
+  before(async () => {
+    product = (await call("admin", "GET", "/api/products")).data.items[0].id;
+  });
+
+  test("permisos y alcance: admin y solo lectura ven todo; supervisor, su equipo; vendedor y repartidor, nada", async () => {
+    assert.equal((await dash("admin")).data.scope, "todo");
+    assert.equal((await dash("lectura")).data.scope, "todo");
+    assert.equal((await dash("supervisor")).data.scope, "equipo");
+    assert.equal((await dash("vendedor1")).status, 403);
+    assert.equal((await dash("repartidor")).status, 403);
+  });
+
+  test("filtros: período y rango inválidos 422; vendedor o equipo fuera de alcance 404", async () => {
+    assert.equal((await dash("admin", "?periodo=trimestre")).status, 422);
+    assert.equal((await dash("admin", "?periodo=personalizado&desde=2026-03-01&hasta=2026-01-01")).status, 422);
+    assert.equal((await dash("admin", "?periodo=personalizado&desde=2024-01-01&hasta=2026-01-01")).status, 422);
+    assert.equal((await dash("admin", "?periodo=personalizado")).status, 422);
+    assert.equal((await dash("admin", "?vendedor=no-existe")).status, 404);
+    assert.equal((await dash("admin", "?equipo=no-existe")).status, 404);
+    const hoy = await dash("admin", "?periodo=hoy");
+    assert.equal(hoy.data.period.bucket, "hora");
+    const custom = await dash("admin", "?periodo=personalizado&desde=2026-01-01&hasta=2026-06-30");
+    assert.equal(custom.status, 200);
+    assert.equal(custom.data.period.bucket, "mes");
+  });
+
+  test("las partes suman el total: series y vendedores", async () => {
+    const { data } = await dash("admin");
+    const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
+    assert.equal(sum(data.series.map((s) => s.leads)), data.kpis.leadsNew.value);
+    assert.equal(sum(data.series.map((s) => s.sales)), data.kpis.sales.value);
+    assert.equal(sum(data.series.map((s) => s.revenue)), data.kpis.revenue.value);
+    assert.equal(sum(data.sellers.map((s) => s.revenue)), data.kpis.revenue.value, "todas las ventas del demo tienen vendedor");
+    assert.ok((data.kpis.leadsNew.value ?? 0) > 0, "el demo trae historia");
+  });
+
+  test("con permiso propio, el vendedor ve exactamente lo suyo (igual que el admin filtrando por él)", async () => {
+    const grant = { overrides: { vendedor: { dashboard: { actions: ["ver"], scope: "propio" } } } };
+    assert.equal((await call("admin", "PUT", "/api/settings/permissions", grant)).status, 200);
+    try {
+      const own = await dash("vendedor1");
+      assert.equal(own.status, 200);
+      assert.equal(own.data.scope, "propio");
+      assert.deepEqual(own.data.sellers.map((s) => s.id), [uids.vendedor1]);
+      const asAdmin = await dash("admin", `?vendedor=${uids.vendedor1}`);
+      assert.deepEqual(own.data.kpis, asAdmin.data.kpis);
+      // Pedir los datos de otro vendedor no amplía el alcance.
+      const sneaky = await dash("vendedor1", `?vendedor=${uids.vendedor2}`);
+      assert.deepEqual(sneaky.data.kpis, own.data.kpis);
+    } finally {
+      assert.equal((await call("admin", "PUT", "/api/settings/permissions", { overrides: {} })).status, 200);
+    }
+  });
+
+  test("primera compra cuenta como cliente nuevo; volver a comprar estando inactivo, como reactivado", async () => {
+    const before = (await dash("admin", "?periodo=hoy")).data.kpis;
+    const created = await call("vendedor1", "POST", "/api/customers", { name: `Métricas ${Date.now()}` });
+    assert.equal(created.status, 200, JSON.stringify(created.data));
+    const id = created.data.customer.id;
+
+    const first = await call("vendedor1", "POST", "/api/orders", { customerId: id, items: [{ productId: product, qty: 2, unitPrice: 1000 }], confirm: true });
+    assert.equal(first.status, 200, JSON.stringify(first.data));
+    const firstOrder = (await call("vendedor1", "GET", `/api/orders/${first.data.order.id}`)).data.order as unknown as { customerKind: string };
+    assert.equal(firstOrder.customerKind, "nuevo");
+    // La automatización de ejemplo "pedido-activo" lo pasa enseguida a cliente activo.
+    assert.ok(["cliente_nuevo", "cliente_activo"].includes((await call("vendedor1", "GET", `/api/customers/${id}`)).data.customer.stage));
+
+    // El cliente deja de comprar y lo marcan para reactivar.
+    assert.equal((await call("admin", "PATCH", `/api/customers/${id}`, { stage: "cliente_inactivo", needsReactivation: true })).status, 200);
+    const again = await call("vendedor1", "POST", "/api/orders", { customerId: id, items: [{ productId: product, qty: 1, unitPrice: 500 }], confirm: true });
+    assert.equal(again.status, 200);
+    const againOrder = (await call("vendedor1", "GET", `/api/orders/${again.data.order.id}`)).data.order as unknown as { customerKind: string };
+    assert.equal(againOrder.customerKind, "reactivado");
+    const customer = (await call("vendedor1", "GET", `/api/customers/${id}`)).data.customer as CustomerRow & { needsReactivation: boolean };
+    assert.equal(customer.stage, "cliente_activo");
+    assert.equal(customer.needsReactivation, false);
+
+    const after = (await dash("admin", "?periodo=hoy")).data.kpis;
+    assert.equal(after.sales.value, (before.sales.value ?? 0) + 2);
+    assert.equal(after.revenue.value, (before.revenue.value ?? 0) + 2500);
+    // Compró por primera vez y se reactivó en el mismo día: cuenta una vez, como nuevo.
+    assert.equal(after.customersNew.value, (before.customersNew.value ?? 0) + 1);
+    assert.equal(after.ordersCreated.value, (before.ordersCreated.value ?? 0) + 2);
+
+    // Cancelar una venta la descuenta del monto.
+    assert.equal((await call("admin", "POST", `/api/orders/${again.data.order.id}/status`, { status: "cancelado", reason: "Prueba" })).status, 200);
+    const cancelled = (await dash("admin", "?periodo=hoy")).data.kpis;
+    assert.equal(cancelled.revenue.value, (before.revenue.value ?? 0) + 2000);
+  });
+
+  test("un pedido cargado desde la ficha se vincula al lead abierto del cliente", async () => {
+    const sim = await upload("admin", "/api/demo/inbound", { phone: randomPhone(), name: "Lead Métricas", text: "¿Precio por cajón?" });
+    assert.equal(sim.status, 200);
+    const conv = (await call("admin", "GET", `/api/conversations/${sim.data.conversationId}`)).data.conversation;
+    assert.ok(conv.leadId);
+    const order = await call("admin", "POST", "/api/orders", { customerId: conv.customerId, items: [{ productId: product, qty: 1 }], confirm: true });
+    assert.equal(order.status, 200, JSON.stringify(order.data));
+    const saved = (await call("admin", "GET", `/api/orders/${order.data.order.id}`)).data.order as unknown as { leadId?: string; customerKind: string };
+    assert.equal(saved.leadId, conv.leadId);
+    assert.equal(saved.customerKind, "nuevo");
+    const updated = (await call("admin", "GET", `/api/conversations/${sim.data.conversationId}`)).data.conversation;
+    assert.notEqual(updated.customerStage, "prospecto", "dejó de ser prospecto (la etapa se copia a la conversación)");
+  });
+});
+
 describe("seguridad de la API", () => {
   test("sin Origin o con otro origen, las escrituras se rechazan (CSRF)", async () => {
     assert.equal((await call("admin", "POST", "/api/customers", { name: "CSRF" }, null)).status, 403);

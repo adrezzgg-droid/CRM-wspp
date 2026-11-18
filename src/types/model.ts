@@ -388,8 +388,23 @@ export interface Order extends Audited, TenantScoped {
   cancelReason?: string;
   /** Ya sumó a las estadísticas del cliente (se descuenta si se cancela). */
   counted: boolean;
+  /**
+   * Qué tipo de compra fue, según cómo estaba el cliente al confirmarse
+   * (primera compra, recurrente o reactivación). Base de las métricas de
+   * clientes nuevos / recurrentes / reactivados. Ausente en pedidos que nunca
+   * se confirmaron.
+   */
+  customerKind?: CustomerKind;
   deliveryRef?: { system: string; externalId: string; status?: string };
 }
+
+export type CustomerKind = "nuevo" | "recurrente" | "reactivado";
+
+export const CUSTOMER_KIND_LABELS: Record<CustomerKind, string> = {
+  nuevo: "Clientes nuevos",
+  recurrente: "Recurrentes",
+  reactivado: "Reactivados",
+};
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   borrador: "Borrador",

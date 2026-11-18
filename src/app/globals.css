@@ -26,6 +26,20 @@
   --color-line: #e3e8eb;
   --color-ink: #0f1d22;
   --color-ink-muted: #5b6b73;
+
+  /*
+   * Gráficos. Una sola serie: verde de marca (brand-500, validado contra el
+   * blanco). Varias categorías: orden fijo azul → naranja → aqua, validado
+   * para daltonismo (scripts del skill de dataviz); el aqua queda por debajo
+   * de 3:1, por eso esas partes siempre llevan su número visible.
+   */
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  --color-viz-grid: #e9edef;
+  --color-viz-axis: #c9d2d6;
+  --color-delta-up: #006300;
+  --color-delta-down: #c22f2f;
 }
 
 html,

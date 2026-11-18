@@ -2,7 +2,7 @@
  * Reglas de pedidos: totales, numeración, transiciones de estado y
  * estadísticas del cliente. Código puro.
  */
-import type { Customer, LeadStatus, OrderItem, OrderStatus } from "../types/model.ts";
+import type { Customer, CustomerKind, LeadStatus, OrderItem, OrderStatus } from "../types/model.ts";
 
 /** Redondeo a centavos (evita 0.1 + 0.2). */
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -60,4 +60,15 @@ export function leadStatusForOrder(status: OrderStatus): LeadStatus | null {
   if (status === "confirmado") return "pedido_generado";
   if (status === "entregado") return "venta_realizada";
   return null;
+}
+
+/**
+ * Tipo de compra según cómo estaba el cliente justo antes de confirmarse el
+ * pedido: primera compra (prospecto o cliente nuevo sin compras), vuelta de un
+ * cliente inactivo / perdido / marcado para reactivar, o compra habitual.
+ */
+export function customerKindFor(c: Pick<Customer, "stage" | "needsReactivation" | "stats">): CustomerKind {
+  if (c.stage === "prospecto" || (c.stage === "cliente_nuevo" && c.stats.ordersCount === 0)) return "nuevo";
+  if (c.needsReactivation || c.stage === "cliente_inactivo" || c.stage === "cliente_perdido") return "reactivado";
+  return "recurrente";
 }

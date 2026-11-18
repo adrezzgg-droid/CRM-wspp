@@ -15,6 +15,7 @@ import { buildInboundPayload, messagePreview, parseWebhook, type MetaMessage } f
 import { ingestInbound } from "../src/server/inbox/ingest-core.ts";
 import { msToZoned, zonedTimeToMs } from "../src/lib/tasks.ts";
 import { createOrganizationDocs, ensureUser, initAdmin, isEmulator, parseArgs, upsertMember } from "./lib/provision.ts";
+import { seedHistory } from "./lib/demo-history.ts";
 
 const ORG_ID = "demo";
 const ORG_NAME = "Distribuidora Demo";
@@ -435,8 +436,20 @@ for (const doc of (await db.collection(`organizations/${ORG_ID}/members`).get())
 await seedZonesAndTeam(db, uids);
 await seedNotifications(db, uids);
 await seedCustomers(db, uids);
-await seedConversations(db, uids);
 await seedCatalogAndPipeline(db, uids);
+// Dos meses de historia (leads, respuestas, pedidos) para el dashboard. Va antes
+// de las conversaciones de hoy porque esas reinician el turno rotativo.
+const history = await seedHistory({
+  db,
+  orgId: ORG_ID,
+  account: { id: "demo", phoneNumberId: `demo-${ORG_ID}`, displayPhone: "+54 9 351 000-0000 (demo)" },
+  uids,
+  products: (await db.collection(`organizations/${ORG_ID}/products`).get()).docs.map((d) => ({ id: d.id, name: d.get("name") as string, price: d.get("price") as number })),
+  timezone: "America/Argentina/Cordoba",
+  now: Date.now(),
+});
+console.log(`Historia: ${history.leads} leads y ${history.orders} pedidos de los últimos 60 días`);
+await seedConversations(db, uids);
 await seedTasks(db, uids);
 await seedAutomations(db);
 
