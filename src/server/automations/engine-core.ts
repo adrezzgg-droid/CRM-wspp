@@ -40,7 +40,7 @@ export interface OutboundPayload {
   text: string;
   template?: { name: string; language: string; params: string[] };
 }
-export type SendFn = (org: { isDemo: boolean }, to: string, payload: OutboundPayload) => Promise<{ wamid: string }>;
+export type SendFn = (org: { id: string; isDemo: boolean }, to: string, payload: OutboundPayload) => Promise<{ wamid: string }>;
 
 export interface EngineDeps {
   db: Firestore;

@@ -156,5 +156,8 @@ service cloud.firestore {
     }
 
     match /webhookEvents/{id} { allow read, write: if false; }
+    // Enrutamiento de webhooks (número / WABA / Verify Token → empresa): solo el servidor.
+    match /whatsappRoutes/{id} { allow read, write: if false; }
+    match /whatsappVerifyTokens/{id} { allow read, write: if false; }
   }
 }

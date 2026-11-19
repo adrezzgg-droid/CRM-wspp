@@ -8,7 +8,9 @@ import { recordAuditIn } from "@/server/audit";
 import { can, type Action } from "@/server/permissions/matrix";
 import type { Session } from "@/server/auth/session";
 import { getTags, getZones } from "@/server/org/data";
-import { extractVariables } from "@/lib/templates";
+import { extractVariables, SAMPLE_VALUES, toMetaBody, type TemplateVariable } from "@/lib/templates";
+import { withGraph } from "@/server/whatsapp/service";
+import { createTemplate as createMetaTemplate, deleteTemplate as deleteMetaTemplate, editTemplate as editMetaTemplate, listTemplates as listMetaTemplates, mapTemplateStatus } from "@/server/whatsapp/graph";
 import type { automationInput, templateInput } from "@/lib/schemas";
 import { runScheduledForOrg } from "./run";
 
@@ -65,6 +67,10 @@ export async function updateTemplate(session: Session, id: string, input: z.outp
   const current = (await listTemplates(session)).find((t) => t.id === id);
   if (!current) throw new ApiError(404, "Plantilla no encontrada");
   await assertUniqueTemplate(session, input.name, input.language, id);
+  // Meta identifica la plantilla por nombre e idioma: una vez enviada no se pueden cambiar.
+  if (current.metaTemplateId && (current.name !== input.name || current.language !== input.language)) {
+    throw new ApiError(409, "Esta plantilla ya se envió a Meta: no se puede cambiar el nombre ni el idioma. Creá una nueva.", [{ path: ["name"], message: "No se puede cambiar" }]);
+  }
   const changedText = current.body !== input.body || current.name !== input.name || current.language !== input.language || current.category !== input.category;
   const now = Date.now();
   const batch = adminDb().batch();
@@ -85,7 +91,7 @@ export async function updateTemplate(session: Session, id: string, input: z.outp
  */
 export async function setTemplateStatus(session: Session, id: string, metaStatus: WhatsappTemplate["metaStatus"]) {
   requirePerm(session, "plantillas", "editar");
-  if (!session.org.isDemo) throw new ApiError(409, "La aprobación de plantillas la informa Meta. Se conecta en la Fase 9.");
+  if (!session.org.isDemo) throw new ApiError(409, "La aprobación de plantillas la informa Meta. Usá «Enviar a Meta» y «Sincronizar con Meta».");
   const current = (await listTemplates(session)).find((t) => t.id === id);
   if (!current) throw new ApiError(404, "Plantilla no encontrada");
   const now = Date.now();
@@ -103,10 +109,77 @@ export async function deleteTemplate(session: Session, id: string) {
     (d.data() as Automation).actions.some((a) => a.type === "enviar_mensaje" && a.templateId === id),
   );
   if (users.length) throw new ApiError(409, `La usa la automatización "${(users[0].data() as Automation).name}". Quitala de ahí primero.`);
+  // Si estaba en Meta, también se borra allá (si Meta ya no la tiene, se sigue igual).
+  if (!session.org.isDemo && current.metaTemplateId) {
+    await withGraph(session.orgId, (cfg, c) => deleteMetaTemplate(cfg, c.account.wabaId, current)).catch((error) => {
+      if (!(error instanceof ApiError && error.status === 502 && /does not exist|no existe/i.test(error.message))) throw error;
+    });
+  }
   const batch = adminDb().batch();
   batch.delete(col(session.orgId, "whatsappTemplates").doc(id));
   recordAuditIn(batch, audit(session, "template.deleted", { collection: "whatsappTemplates", id }, { name: current.name, body: current.body }));
   await batch.commit();
+}
+
+/**
+ * Enviar la plantilla a revisión de Meta (o reenviar el texto editado de una
+ * ya creada). Las variables con nombre viajan en formato posicional, con
+ * valores de ejemplo como pide Meta.
+ */
+export async function submitTemplate(session: Session, id: string): Promise<WhatsappTemplate> {
+  requirePerm(session, "plantillas", "editar");
+  if (session.org.isDemo) throw new ApiError(409, "En el demo la aprobación se simula a mano.");
+  const current = (await listTemplates(session)).find((t) => t.id === id);
+  if (!current) throw new ApiError(404, "Plantilla no encontrada");
+  if (current.category === "authentication") throw new ApiError(422, "Las plantillas de autenticación (códigos) se crean desde el administrador de WhatsApp de Meta.");
+  if (current.metaStatus === "pendiente") throw new ApiError(409, "Ya está en revisión de Meta");
+  const { text, order } = toMetaBody(current.body);
+  const examples = order.map((v) => SAMPLE_VALUES[v as TemplateVariable] ?? v);
+  const result = await withGraph(session.orgId, async (cfg, c) => {
+    if (current.metaTemplateId) {
+      await editMetaTemplate(cfg, current.metaTemplateId, { category: current.category, metaText: text, examples });
+      return { id: current.metaTemplateId, status: "PENDING" };
+    }
+    return createMetaTemplate(cfg, c.account.wabaId, { name: current.name, language: current.language, category: current.category, metaText: text, examples });
+  });
+  const now = Date.now();
+  const metaStatus = mapTemplateStatus(result.status ?? "PENDING");
+  const batch = adminDb().batch();
+  batch.update(col(session.orgId, "whatsappTemplates").doc(id), { metaTemplateId: result.id, metaStatus, rejectedReason: null, submittedAt: now, updatedAt: now, updatedBy: session.uid });
+  recordAuditIn(batch, audit(session, "template.submitted", { collection: "whatsappTemplates", id }, { metaStatus: current.metaStatus }, { metaStatus, metaTemplateId: result.id }), now);
+  await batch.commit();
+  return { ...current, metaTemplateId: result.id, metaStatus, submittedAt: now };
+}
+
+/** Traer de Meta el estado de todas las plantillas (por si se perdió algún aviso). */
+export async function syncTemplates(session: Session): Promise<{ updated: number; onlyInMeta: string[] }> {
+  requirePerm(session, "plantillas", "editar");
+  if (session.org.isDemo) throw new ApiError(409, "El demo no está conectado a Meta.");
+  const [local, remote] = await Promise.all([listTemplates(session), withGraph(session.orgId, (cfg, c) => listMetaTemplates(cfg, c.account.wabaId))]);
+  const now = Date.now();
+  const batch = adminDb().batch();
+  let updated = 0;
+  const matched = new Set<string>();
+  for (const t of local) {
+    const r = remote.find((x) => (t.metaTemplateId && x.id === t.metaTemplateId) || (x.name === t.name && x.language === t.language));
+    if (!r) continue;
+    matched.add(r.id);
+    const metaStatus = mapTemplateStatus(r.status);
+    // Un borrador editado localmente no se pisa: espera a que lo reenvíen.
+    if (t.metaStatus === "borrador" && t.metaTemplateId) continue;
+    if (t.metaStatus === metaStatus && t.metaTemplateId === r.id) continue;
+    updated += 1;
+    batch.update(col(session.orgId, "whatsappTemplates").doc(t.id), {
+      metaTemplateId: r.id,
+      metaStatus,
+      rejectedReason: metaStatus === "rechazada" ? (r.rejected_reason && r.rejected_reason !== "NONE" ? r.rejected_reason : r.status) : null,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+  }
+  recordAuditIn(batch, audit(session, "template.synced", { collection: "whatsappTemplates", id: "*" }, undefined, { updated }), now);
+  await batch.commit();
+  return { updated, onlyInMeta: remote.filter((r) => !matched.has(r.id)).map((r) => `${r.name} (${r.language})`) };
 }
 
 // ─────────────────────────── Automatizaciones ───────────────────────────────

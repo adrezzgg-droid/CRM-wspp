@@ -240,6 +240,8 @@ export interface Conversation extends Audited, TenantScoped {
   lastMessagePreview?: string;
   lastMessageDirection?: "in" | "out" | "internal";
   lastInboundAt?: Timestamp;
+  /** wamid del último mensaje del cliente (para la confirmación de lectura en WhatsApp). */
+  lastInboundWamid?: string;
   /** Fin de la ventana de 24 h de Meta (lastInboundAt + 24 h). */
   serviceWindowEndsAt?: Timestamp;
   awaitingReply: boolean;
@@ -526,9 +528,45 @@ export interface WhatsappAccount extends Audited, TenantScoped {
   wabaId: string;
   verifyTokenSet: boolean;
   tokenSet: boolean;
+  /** Últimos 4 caracteres del token cargado (para reconocerlo sin mostrarlo). */
+  tokenLast4?: string;
+  /** La empresa usa su propia app de Meta (su App Secret valida la firma). */
+  appSecretSet?: boolean;
+  /** Nombre verificado del negocio y calidad del número según Meta. */
+  verifiedName?: string;
+  qualityRating?: string;
   connectionStatus: "sin_configurar" | "conectado" | "error";
   webhookStatus: "sin_verificar" | "verificado" | "error";
+  /** Último error de Meta (p.ej. token vencido). */
+  lastError?: string;
+  lastCheckedAt?: Timestamp;
+  webhookVerifiedAt?: Timestamp;
+  /** Último webhook recibido para esta cuenta. */
+  lastWebhookAt?: Timestamp;
   lastSyncAt?: Timestamp;
+}
+
+/**
+ * `organizations/{orgId}/secrets/whatsapp`: cada valor cifrado con
+ * AES-256-GCM (src/server/whatsapp/secret-box.ts). Solo el servidor lo lee.
+ */
+export interface WhatsappSecrets {
+  accessToken?: string;
+  appSecret?: string;
+  verifyToken?: string;
+  updatedAt: Timestamp;
+  updatedBy: Id;
+}
+
+/**
+ * `whatsappRoutes/{phone_<phoneNumberId> | waba_<wabaId>}` (raíz): a qué
+ * empresa va cada webhook. Un número no puede estar conectado a dos empresas.
+ */
+export interface WhatsappRoute {
+  orgId: Id;
+  accountId: Id;
+  kind: "phone" | "waba";
+  createdAt: Timestamp;
 }
 
 export type TemplateCategory = "marketing" | "utility" | "authentication";
@@ -542,6 +580,9 @@ export interface WhatsappTemplate extends Audited, TenantScoped {
   variables: string[]; // p.ej. ["nombre", "pedido"]
   metaStatus: "borrador" | "pendiente" | "aprobada" | "rechazada";
   metaTemplateId?: string;
+  /** Motivo que informó Meta al rechazarla o pausarla. */
+  rejectedReason?: string;
+  submittedAt?: Timestamp;
 }
 
 /**
@@ -645,6 +686,7 @@ export interface OutboxItem extends TenantScoped {
   attempts: number;
   nextAttemptAt?: Timestamp;
   lastError?: string;
+  deliveredAt?: Timestamp;
   createdAt: Timestamp;
 }
 
@@ -652,12 +694,18 @@ export interface OutboxItem extends TenantScoped {
 export interface WebhookEvent {
   id: Id;
   orgId?: Id;
+  accountId?: Id;
   source: "whatsapp";
   receivedAt: Timestamp;
   processedAt?: Timestamp;
-  status: "recibido" | "procesado" | "error";
+  /** sin_empresa: firmado por Meta pero para un número que no está conectado. */
+  status: "recibido" | "procesado" | "error" | "sin_empresa";
+  attempts: number;
   error?: string;
+  /** Solo la parte del payload que corresponde a esta empresa. */
   payload: unknown;
+  /** Borrado automático (política TTL de Firestore sobre este campo). */
+  expireAt: Date;
 }
 
 // ────────────────────────────── Rutas de colecciones ───────────────────────

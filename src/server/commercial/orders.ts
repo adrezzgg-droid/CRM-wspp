@@ -80,12 +80,15 @@ export async function listOrders(session: Session, f: OrderListQuery): Promise<{
 
 // ───────────────────────────── Efectos ──────────────────────────────────────
 
-/** ¿Hay conectores activos que esperan este evento? (se configuran en la Fase 9) */
-async function readOutboxConnectors(tx: Transaction, orgId: string): Promise<string[]> {
+/**
+ * ¿Hay conectores activos que esperan este evento? (Configuración → Integraciones).
+ * `source`: el cambio vino de ese conector, no se le devuelve (evita el eco).
+ */
+async function readOutboxConnectors(tx: Transaction, orgId: string, event: string, source?: string): Promise<string[]> {
   const snap = await tx.get(col(orgId, "settings").doc("integrations"));
   const connectors = (snap.data()?.connectors ?? {}) as Record<string, { enabled?: boolean; events?: string[] }>;
   return Object.entries(connectors)
-    .filter(([, c]) => c.enabled && (!c.events || c.events.includes("order.confirmed")))
+    .filter(([name, c]) => name !== source && c.enabled && (!c.events || c.events.includes(event)))
     .map(([name]) => name);
 }
 
@@ -108,6 +111,10 @@ function enqueueIn(tx: Transaction, session: Session, connectors: string[], even
         currency: order.currency,
         deliveryAddress: order.deliveryAddress ?? null,
         deliveryDate: order.deliveryDate ?? null,
+        sellerId: order.sellerId,
+        notes: order.notes ?? null,
+        ...(event === "order.cancelled" ? { cancelReason: order.cancelReason ?? null } : {}),
+        externalId: order.deliveryRef?.externalId ?? null,
       },
       status: "pendiente",
       attempts: 0,
@@ -185,7 +192,7 @@ export async function createOrder(session: Session, input: z.output<typeof order
     const counter = ((await tx.get(counterRef)).data()?.orders as number | undefined) ?? 0;
     const effects = await readCommercialEffects(tx, session, { leadId, customerId: customer.id, convertProspect: input.confirm, purchase: input.confirm });
     const oppEffect = input.confirm ? await readOpportunityEffect(tx, session, input.opportunityId, "confirmado") : null;
-    const connectors = input.confirm ? await readOutboxConnectors(tx, session.orgId) : [];
+    const connectors = input.confirm ? await readOutboxConnectors(tx, session.orgId, "order.confirmed") : [];
     const freshCustomer = effects.customer as Customer;
 
     // Escrituras
@@ -231,7 +238,12 @@ export async function createOrder(session: Session, input: z.output<typeof order
 
 // ───────────────────────────── Estado ───────────────────────────────────────
 
-export async function changeOrderStatus(session: Session, id: string, input: z.output<typeof orderStatusInput>): Promise<Order> {
+export async function changeOrderStatus(
+  session: Session,
+  id: string,
+  input: z.output<typeof orderStatusInput>,
+  opts: { source?: string; deliveryRef?: Order["deliveryRef"] } = {},
+): Promise<Order> {
   const order = await loadOrder(session, id, "editar");
   const actor = orderActor(session);
   if (actor === "repartidor" && order.driverId !== session.uid) throw new ApiError(403, "El pedido no está asignado a vos");
@@ -256,7 +268,9 @@ export async function changeOrderStatus(session: Session, id: string, input: z.o
       purchase: countDelta === 1 && !order.customerKind,
     });
     const oppEffect = await readOpportunityEffect(tx, session, order.opportunityId, input.status);
-    const connectors = input.status === "confirmado" ? await readOutboxConnectors(tx, session.orgId) : [];
+    // Se avisa la confirmación y, si ya se había mandado, la cancelación.
+    const event = input.status === "confirmado" ? "order.confirmed" : input.status === "cancelado" && order.counted ? "order.cancelled" : null;
+    const connectors = event ? await readOutboxConnectors(tx, session.orgId, event, opts.source) : [];
 
     tx.update(ref, {
       status: input.status,
@@ -264,6 +278,7 @@ export async function changeOrderStatus(session: Session, id: string, input: z.o
       counted: willCount,
       ...(effects.customerKind ? { customerKind: effects.customerKind } : {}),
       ...(input.status === "cancelado" ? { cancelReason: input.reason } : {}),
+      ...(opts.deliveryRef ? { deliveryRef: opts.deliveryRef } : {}),
       updatedAt: now,
       updatedBy: session.uid,
     });
@@ -278,7 +293,7 @@ export async function changeOrderStatus(session: Session, id: string, input: z.o
     }
     effects.write(leadTo ? { to: leadTo } : null, now, { orderId: id });
     oppEffect?.(now);
-    enqueueIn(tx, session, connectors, "order.confirmed", { ...order, status: input.status }, now);
+    if (event) enqueueIn(tx, session, connectors, event, { ...order, status: input.status, cancelReason: input.reason ?? order.cancelReason }, now);
 
     // El vendedor se entera de la entrega.
     const seller = members.find((m: Member) => m.id === order.sellerId);

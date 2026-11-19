@@ -20,7 +20,11 @@ const schema = z.object({
   SESSION_DAYS: z.coerce.number().int().min(1).max(14).default(5),
   SECRETS_ENCRYPTION_KEY: z.string().optional(),
   WHATSAPP_APP_SECRET: z.string().optional(),
+  /** Verify Token de la app de la plataforma (además del que genera cada empresa). */
+  WHATSAPP_VERIFY_TOKEN: z.string().optional(),
   WHATSAPP_GRAPH_API_VERSION: z.string().default("v23.0"),
+  /** Solo para pruebas contra un Graph API simulado. */
+  WHATSAPP_GRAPH_BASE_URL: z.url().optional(),
   CRON_SECRET: z.string().optional(),
 });
 

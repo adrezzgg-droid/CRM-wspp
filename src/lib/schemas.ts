@@ -469,3 +469,52 @@ export const dashboardQuery = z.object({
   equipo: id.optional(),
 });
 export type DashboardQuery = z.infer<typeof dashboardQuery>;
+
+// ─────────────────────────────── WhatsApp ───────────────────────────────────
+
+const metaId = (label: string) => z.string().trim().regex(/^\d{5,30}$/, `${label}: son solo números (lo copiás de Meta for Developers)`);
+
+/** Conexión de la cuenta. Los secretos son opcionales al editar: vacío = se conserva el guardado. */
+export const whatsappConfigInput = z.object({
+  phoneNumberId: metaId("Phone Number ID"),
+  wabaId: metaId("WABA ID"),
+  accessToken: z
+    .string()
+    .trim()
+    .max(2048)
+    .transform((v) => v || undefined)
+    .refine((v) => !v || (v.length >= 20 && !/\s/.test(v)), "El token no tiene el formato de un Access Token de Meta")
+    .optional(),
+  appSecret: z
+    .string()
+    .trim()
+    .max(200)
+    .transform((v) => v || undefined)
+    .refine((v) => !v || /^[0-9a-f]{32}$/i.test(v), "El App Secret son 32 caracteres hexadecimales")
+    .optional(),
+  /** Dejar de usar un App Secret propio (pasar al de la plataforma). */
+  clearAppSecret: z.boolean().default(false),
+});
+
+// ────────────────────────────── Integraciones ───────────────────────────────
+
+export const CONNECTOR_EVENTS = ["order.confirmed", "order.cancelled"] as const;
+
+export const gestionConfigInput = z.object({
+  enabled: z.boolean(),
+  url: z.string().trim().max(500).pipe(z.url("Dirección inválida")),
+  events: z.array(z.enum(CONNECTOR_EVENTS)).min(1, "Elegí al menos un evento"),
+  /** Generar un secreto compartido nuevo (hay que cargarlo también en el sistema de gestión). */
+  regenerateSecret: z.boolean().default(false),
+});
+
+/** Lo que el sistema de gestión informa sobre un pedido (estado del reparto). */
+export const gestionStatusInput = z
+  .object({
+    orderId: id.optional(),
+    number: z.string().trim().regex(/^P-\d{6}$/, "Número de pedido inválido").optional(),
+    status: z.enum(["en_preparacion", "en_reparto", "entregado", "cancelado"]),
+    externalId: z.string().trim().max(120).optional(),
+    reason: z.string().trim().max(300).optional(),
+  })
+  .refine((v) => v.orderId || v.number, { message: "Falta orderId o number", path: ["orderId"] });

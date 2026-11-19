@@ -60,6 +60,12 @@ export interface MetaWebhookPayload {
         contacts?: { profile?: { name?: string }; wa_id: string }[];
         messages?: MetaMessage[];
         statuses?: MetaStatus[];
+        // field = "message_template_status_update"
+        event?: string;
+        message_template_id?: number | string;
+        message_template_name?: string;
+        message_template_language?: string;
+        reason?: string | null;
       };
     }[];
   }[];
@@ -91,9 +97,21 @@ export interface StatusUpdate {
   errorCode?: string;
 }
 
+/** Meta aprobó, rechazó o pausó una plantilla (llega por cuenta de WhatsApp Business, no por número). */
+export interface TemplateStatusUpdate {
+  wabaId: string;
+  metaTemplateId: string;
+  name: string;
+  language?: string;
+  /** APPROVED, REJECTED, PENDING, PAUSED, DISABLED… */
+  event: string;
+  reason?: string;
+}
+
 export interface ParsedWebhook {
   messages: InboundMessage[];
   statuses: StatusUpdate[];
+  templates: TemplateStatusUpdate[];
 }
 
 const MEDIA_TYPES = ["image", "document", "audio", "video", "sticker"] as const;
@@ -163,11 +181,23 @@ function parseMessage(m: MetaMessage, phoneNumberId: string, profileName?: strin
 
 /** Extrae mensajes entrantes y cambios de estado. Ignora lo que no entiende. */
 export function parseWebhook(payload: MetaWebhookPayload): ParsedWebhook {
-  const out: ParsedWebhook = { messages: [], statuses: [] };
+  const out: ParsedWebhook = { messages: [], statuses: [], templates: [] };
   if (payload?.object !== "whatsapp_business_account") return out;
 
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
+      const v = change.value;
+      if (change.field === "message_template_status_update" && v?.event && v.message_template_name) {
+        out.templates.push({
+          wabaId: entry.id,
+          metaTemplateId: String(v.message_template_id ?? ""),
+          name: v.message_template_name,
+          language: v.message_template_language,
+          event: v.event,
+          reason: v.reason && v.reason !== "NONE" ? v.reason : undefined,
+        });
+        continue;
+      }
       if (change.field !== "messages" || !change.value?.metadata) continue;
       const { metadata, contacts = [], messages = [], statuses = [] } = change.value;
       const names = new Map(contacts.map((c) => [c.wa_id, c.profile?.name]));
@@ -259,4 +289,15 @@ export function buildInboundPayload(input: {
       },
     ],
   };
+}
+
+/**
+ * A qué cuenta va cada parte del webhook: los mensajes y estados por número
+ * (phone_number_id); las plantillas por cuenta de WhatsApp Business (WABA).
+ * Sirve para repartir un payload entre empresas antes de procesarlo.
+ */
+export function routeKeyOf(entryId: string, change: NonNullable<NonNullable<MetaWebhookPayload["entry"]>[number]["changes"]>[number]): string | null {
+  if (change.field === "messages" && change.value?.metadata?.phone_number_id) return `phone_${change.value.metadata.phone_number_id}`;
+  if (change.field === "message_template_status_update") return `waba_${entryId}`;
+  return null;
 }

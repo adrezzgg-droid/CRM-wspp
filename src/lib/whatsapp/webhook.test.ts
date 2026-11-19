@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildInboundPayload, isWindowOpen, messagePreview, parseWebhook, SERVICE_WINDOW_MS, type MetaWebhookPayload } from "./webhook.ts";
+import { buildInboundPayload, isWindowOpen, messagePreview, parseWebhook, routeKeyOf, SERVICE_WINDOW_MS, type MetaWebhookPayload } from "./webhook.ts";
 
 /** Payload con la forma documentada por Meta (varios mensajes y un estado). */
 const payload: MetaWebhookPayload = {
@@ -77,8 +77,8 @@ test("estados de entrega", () => {
 });
 
 test("payloads ajenos o vacíos no rompen", () => {
-  assert.deepEqual(parseWebhook({ object: "page" }), { messages: [], statuses: [] });
-  assert.deepEqual(parseWebhook({ object: "whatsapp_business_account", entry: [{ id: "x", changes: [{ field: "account_update" }] }] }), { messages: [], statuses: [] });
+  assert.deepEqual(parseWebhook({ object: "page" }), { messages: [], statuses: [], templates: [] });
+  assert.deepEqual(parseWebhook({ object: "whatsapp_business_account", entry: [{ id: "x", changes: [{ field: "account_update" }] }] }), { messages: [], statuses: [], templates: [] });
 });
 
 test("el simulador arma exactamente el formato de Meta", () => {
@@ -105,4 +105,27 @@ test("vista previa y ventana de 24 h", () => {
   assert.equal(isWindowOpen(now + 1, now), true);
   assert.equal(isWindowOpen(now - SERVICE_WINDOW_MS, now), false);
   assert.equal(isWindowOpen(undefined, now), false);
+});
+
+test("estado de plantilla: llega por WABA y se enruta distinto que los mensajes", () => {
+  const payload = {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: "WABA-1",
+        changes: [
+          { field: "message_template_status_update", value: { event: "REJECTED", message_template_id: 123, message_template_name: "promo", message_template_language: "es_AR", reason: "INVALID_FORMAT" } },
+          { field: "message_template_status_update", value: { event: "APPROVED", message_template_id: "456", message_template_name: "bienvenida", message_template_language: "es_AR", reason: "NONE" } },
+        ],
+      },
+    ],
+  };
+  const parsed = parseWebhook(payload);
+  assert.deepEqual(parsed.templates, [
+    { wabaId: "WABA-1", metaTemplateId: "123", name: "promo", language: "es_AR", event: "REJECTED", reason: "INVALID_FORMAT" },
+    { wabaId: "WABA-1", metaTemplateId: "456", name: "bienvenida", language: "es_AR", event: "APPROVED", reason: undefined },
+  ]);
+  assert.equal(routeKeyOf("WABA-1", payload.entry[0].changes[0]), "waba_WABA-1");
+  assert.equal(routeKeyOf("WABA-1", { field: "messages", value: { metadata: { phone_number_id: "PN-9" } } }), "phone_PN-9");
+  assert.equal(routeKeyOf("WABA-1", { field: "account_update" }), null);
 });

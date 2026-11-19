@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MessageSquareText, Pencil, Plus, Trash2 } from "lucide-react";
+import { MessageSquareText, Pencil, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
 import type { WhatsappTemplate } from "@/types/model";
 import { TEMPLATE_CATEGORIES, META_STATUSES } from "@/lib/schemas";
 import { renderTemplate, SAMPLE_VALUES, suggestMetaName, TEMPLATE_VARIABLES, TEMPLATE_VARIABLE_LABELS, toMetaBody } from "@/lib/templates";
@@ -14,7 +14,7 @@ const CATEGORY_LABELS = { marketing: "Marketing", utility: "Servicio (utility)",
 const STATUS_LABELS = { borrador: "Borrador", pendiente: "En revisión de Meta", aprobada: "Aprobada", rechazada: "Rechazada" } as const;
 const STATUS_TONE = { borrador: "neutral", pendiente: "warn", aprobada: "brand", rechazada: "danger" } as const;
 
-type Row = Pick<WhatsappTemplate, "id" | "name" | "category" | "language" | "body" | "metaStatus">;
+type Row = Pick<WhatsappTemplate, "id" | "name" | "category" | "language" | "body" | "metaStatus" | "rejectedReason" | "metaTemplateId">;
 
 const SUGGESTIONS = [
   { label: "Bienvenida", category: "utility", body: "¡Hola {{nombre}}! Gracias por escribirnos. Soy {{vendedor}} y te voy a atender. ¿En qué te ayudo?" },
@@ -150,6 +150,7 @@ function TemplateModal({ template, onClose }: { template?: Row; onClose: () => v
           </div>
         )}
         {template && template.metaStatus !== "borrador" && <Alert tone="info">Si cambiás el texto, vuelve a borrador: Meta tiene que aprobarlo de nuevo.</Alert>}
+        {template?.metaTemplateId && <p className="text-xs text-ink-muted">Ya se envió a Meta: el nombre y el idioma no se pueden cambiar.</p>}
       </form>
     </Modal>
   );
@@ -159,14 +160,21 @@ export function TemplatesManager({ templates, canEdit, isDemo }: { templates: Ro
   const router = useRouter();
   const [modal, setModal] = useState<{ template?: Row } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
-  async function run(fn: () => Promise<unknown>) {
+  async function run(fn: () => Promise<unknown>, key = "x", ok?: (r: unknown) => string | null) {
     setError(null);
+    setNotice(null);
+    setBusy(key);
     try {
-      await fn();
+      const r = await fn();
+      setNotice(ok?.(r) ?? null);
       router.refresh();
     } catch (err) {
       setError(errorMessage(err));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -174,16 +182,34 @@ export function TemplatesManager({ templates, canEdit, isDemo }: { templates: Ro
     <div className="space-y-3">
       <Alert tone="info">
         Fuera de las 24 h desde el último mensaje del cliente, WhatsApp solo permite escribirle con plantillas aprobadas por Meta.
-        {isDemo ? " En el demo podés simular la aprobación." : " El envío a aprobación se conecta en la Fase 9."}
+        {isDemo
+          ? " En el demo podés simular la aprobación."
+          : " Creá la plantilla, enviala a Meta y esperá la aprobación (suele tardar de minutos a un día). El estado se actualiza solo."}
       </Alert>
       {canEdit && (
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
+          {!isDemo && (
+            <Button
+              variant="secondary"
+              loading={busy === "sync"}
+              onClick={() =>
+                run(() => api("POST", "/api/templates/sync"), "sync", (r) => {
+                  const { updated, onlyInMeta } = r as { updated: number; onlyInMeta: string[] };
+                  const extra = onlyInMeta.length ? ` En Meta hay además: ${onlyInMeta.join(", ")} (no están en el CRM).` : "";
+                  return (updated ? `Se actualizaron ${updated} plantilla(s).` : "Todo estaba al día.") + extra;
+                })
+              }
+            >
+              <RefreshCw className="size-4" aria-hidden /> Sincronizar con Meta
+            </Button>
+          )}
           <Button onClick={() => setModal({})}>
             <Plus className="size-4" aria-hidden /> Nueva plantilla
           </Button>
         </div>
       )}
       {error && <Alert>{error}</Alert>}
+      {notice && <Alert tone="success">{notice}</Alert>}
       {templates.length === 0 ? (
         <div className="rounded-xl border border-dashed border-line bg-surface px-6 py-10 text-center text-sm text-ink-muted">
           <MessageSquareText className="mx-auto mb-2 size-7" aria-hidden />
@@ -220,12 +246,25 @@ export function TemplatesManager({ templates, canEdit, isDemo }: { templates: Ro
                         ))}
                       </select>
                     )}
+                    {!isDemo && (t.metaStatus === "borrador" || t.metaStatus === "rechazada") && t.category !== "authentication" && (
+                      <Button
+                        variant="secondary"
+                        className="px-2.5 py-1 text-xs"
+                        loading={busy === t.id}
+                        onClick={() => run(() => api("POST", `/api/templates/${t.id}/submit`), t.id, () => `"${t.name}" quedó en revisión de Meta.`)}
+                      >
+                        <Send className="size-3.5" aria-hidden /> Enviar a Meta
+                      </Button>
+                    )}
                     <button type="button" onClick={() => setModal({ template: t })} className="rounded p-1.5 text-ink-muted hover:bg-canvas" aria-label={`Editar ${t.name}`}>
                       <Pencil className="size-4" aria-hidden />
                     </button>
                     <button
                       type="button"
-                      onClick={() => window.confirm(`¿Eliminar la plantilla ${t.name}?`) && run(() => api("DELETE", `/api/templates/${t.id}`))}
+                      onClick={() =>
+                        window.confirm(t.metaTemplateId && !isDemo ? `¿Eliminar la plantilla ${t.name}? También se borra en Meta.` : `¿Eliminar la plantilla ${t.name}?`) &&
+                        run(() => api("DELETE", `/api/templates/${t.id}`), `del-${t.id}`)
+                      }
                       className="rounded p-1.5 text-ink-muted hover:bg-red-50 hover:text-red-600"
                       aria-label={`Eliminar ${t.name}`}
                     >
@@ -235,6 +274,7 @@ export function TemplatesManager({ templates, canEdit, isDemo }: { templates: Ro
                 )}
               </div>
               <p className="mt-2 rounded-lg bg-canvas px-3 py-2 text-sm whitespace-pre-wrap">{t.body}</p>
+              {t.metaStatus === "rechazada" && t.rejectedReason && <p className="mt-2 text-xs text-red-700">Motivo informado por Meta: {t.rejectedReason}</p>}
             </li>
           ))}
         </ul>

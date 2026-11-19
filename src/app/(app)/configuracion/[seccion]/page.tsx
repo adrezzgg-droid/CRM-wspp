@@ -23,11 +23,12 @@ import { AssignmentForm } from "../sections/assignment-form";
 import { getAssignmentSettings } from "@/server/org/assignment";
 import { OWNER_ROLES } from "@/server/org/data";
 import { orgPath } from "@/types/model";
+import { WhatsappSettings } from "../sections/whatsapp-settings";
+import { getWhatsappSettings } from "@/server/whatsapp/service";
+import { IntegrationsSettings } from "../sections/integrations-settings";
+import { getIntegrationsView } from "@/server/connectors/service";
 
-const PENDING_ITEMS: Record<string, string[]> = {
-  whatsapp: ["Número conectado, Phone Number ID y WABA ID", "Access Token cifrado en el servidor", "URL y Verify Token del webhook", "Estado de conexión y prueba"],
-  integraciones: ["Sistema de gestión de la distribuidora", "Cola de envíos con reintentos", "Google Sheets, Mercado Pago, ERP (futuro)"],
-};
+const PENDING_ITEMS: Record<string, string[]> = {};
 
 function findSection(slug: string) {
   return CONFIG_SECTIONS.find((s) => s.slug === slug);
@@ -143,7 +144,7 @@ async function SectionBody({ slug, phase, session }: { slug: string; phase: numb
       const templates = await listTemplates(session);
       return (
         <TemplatesManager
-          templates={templates.map((t) => ({ id: t.id, name: t.name, category: t.category, language: t.language, body: t.body, metaStatus: t.metaStatus }))}
+          templates={templates.map((t) => ({ id: t.id, name: t.name, category: t.category, language: t.language, body: t.body, metaStatus: t.metaStatus, rejectedReason: t.rejectedReason, metaTemplateId: t.metaTemplateId }))}
           canEdit={can(session.role, "plantillas", "editar", session.overrides) && can(session.role, "plantillas", "crear", session.overrides)}
           isDemo={session.org.isDemo}
         />
@@ -188,6 +189,10 @@ async function SectionBody({ slug, phase, session }: { slug: string; phase: numb
         />
       );
     }
+    case "whatsapp":
+      return <WhatsappSettings initial={await getWhatsappSettings(session)} />;
+    case "integraciones":
+      return <IntegrationsSettings initial={await getIntegrationsView(session)} />;
     default:
       return <ModulePending phase={phase} items={PENDING_ITEMS[slug] ?? []} />;
   }

@@ -301,6 +301,7 @@ export async function ingestInbound(db: Firestore, target: IngestTarget, m: Inbo
     tx.update(convRef, {
       ...(isLatest ? { lastMessageAt: m.timestamp, lastMessagePreview: preview, lastMessageDirection: "in" } : {}),
       lastInboundAt,
+      ...(m.timestamp >= (previous?.lastInboundAt ?? 0) ? { lastInboundWamid: m.wamid } : {}),
       serviceWindowEndsAt: lastInboundAt + SERVICE_WINDOW_MS,
       awaitingReply: true,
       // La demora se mide desde el primer mensaje que quedó sin respuesta.

@@ -31,6 +31,9 @@ import { ingestInbound, type IngestResult } from "./ingest-core";
 import { fireAutomations } from "@/server/automations/run";
 import { renderTemplate, toMetaBody } from "@/lib/templates";
 import { senderFor, type OutboundMedia } from "./sender";
+import { withGraph } from "@/server/whatsapp/service";
+import { downloadMedia } from "@/server/whatsapp/graph";
+import { storeConversationFile } from "@/server/whatsapp/deps";
 
 const col = (orgId: string, c: Parameters<typeof orgPath>[1]) => adminDb().collection(orgPath(orgId, c));
 const convRef = (orgId: string, id: string) => col(orgId, "conversations").doc(id);
@@ -270,7 +273,14 @@ export async function getAttachment(session: Session, conversationId: string, me
   const attachment = (snap.data() as Message | undefined)?.attachments?.[index];
   if (!attachment) throw new ApiError(404, "Archivo no encontrado");
   if (!attachment.storagePath) {
-    throw new ApiError(404, "El archivo todavía está en WhatsApp: se descarga automáticamente cuando se conecte la cuenta (Fase 9).");
+    // No se pudo bajar al recibirlo: se intenta ahora (Meta conserva los archivos unos 30 días).
+    if (session.org.isDemo || !attachment.mediaId) throw new ApiError(404, "El archivo no está disponible");
+    const file = await withGraph(session.orgId, (cfg) => downloadMedia(cfg, attachment.mediaId!));
+    const stored = await storeConversationFile(session.orgId, conv.id, { ...file, fileName: attachment.fileName ?? "archivo" });
+    const attachments = [...(snap.data() as Message).attachments!];
+    attachments[index] = { ...attachment, ...stored, mimeType: file.mimeType };
+    await snap.ref.update({ attachments });
+    return { buffer: Buffer.from(file.bytes), mimeType: file.mimeType, fileName: attachment.fileName ?? "archivo" };
   }
   const [buffer] = await adminBucket().file(attachment.storagePath).download();
   return { buffer, mimeType: attachment.mimeType, fileName: attachment.fileName ?? "archivo" };
@@ -285,6 +295,8 @@ export async function markRead(session: Session, conversationId: string): Promis
   const mine = conv.assigneeId === session.uid || (!conv.assigneeId && can(session.role, "inbox", "asignar", session.overrides));
   if (!mine || conv.unreadCount === 0) return;
   await convRef(session.orgId, conv.id).update({ unreadCount: 0 });
+  // Del lado del cliente aparecen los dos tildes azules (si falla, no importa).
+  if (conv.lastInboundWamid) await senderFor(session.org).markRead(conv.lastInboundWamid);
 }
 
 export async function updateConversation(session: Session, conversationId: string, input: z.output<typeof conversationUpdate>) {

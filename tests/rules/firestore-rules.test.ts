@@ -76,6 +76,8 @@ beforeEach(async () => {
     await set(p("notifications/n2"), { userId: "vend2", read: false, title: "Hola" });
     await set(p("customers/x", OTHER), { name: "Cliente de otra org", ownerId: "vend1" });
     await set("webhookEvents/e1", { status: "recibido" });
+    await set("whatsappRoutes/phone_123", { orgId: ORG, accountId: "principal", kind: "phone" });
+    await set("whatsappVerifyTokens/abc", { orgId: ORG, accountId: "principal" });
   });
 });
 
@@ -221,6 +223,12 @@ describe("secretos y colas internas", () => {
   test("outbox y webhookEvents son solo del servidor", async () => {
     await assertFails(getDoc(doc(as("adm", "admin"), p("outbox/x1"))));
     await assertFails(getDoc(doc(as("adm", "admin"), "webhookEvents/e1")));
+  });
+  test("el enrutamiento de webhooks no se lee ni se escribe desde el navegador", async () => {
+    const db = as("adm", "admin");
+    await assertFails(getDoc(doc(db, "whatsappRoutes/phone_123")));
+    await assertFails(getDoc(doc(db, "whatsappVerifyTokens/abc")));
+    await assertFails(setDoc(doc(db, "whatsappRoutes/phone_999"), { orgId: ORG, accountId: "principal", kind: "phone" }));
   });
   test("admin lee auditoría, automatizaciones y la cuenta de WhatsApp (sin token)", async () => {
     const db = as("adm", "admin");

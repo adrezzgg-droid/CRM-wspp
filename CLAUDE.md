@@ -36,7 +36,7 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - Si el dev server da 404 en rutas nuevas, borrar `.next/dev` (caché de Turbopack). Tras horas de recargas en caliente se pone lento (>1 GB): reiniciarlo antes de correr `test:api`.
 - **Mensajes entrantes: una sola puerta.** Todo entra por `ingestInbound` (`src/server/inbox/ingest-core.ts`), que es pura respecto de Next (recibe el Firestore) y la usan el simulador demo, el seed y, en la Fase 9, el webhook. El simulador arma el JSON exacto de Meta (`buildInboundPayload`) y lo pasa por `parseWebhook`. No escribir conversaciones/mensajes entrantes a mano.
 - Conversación: una por número y cuenta (`${accountId}_${waId}`); cerrarla y que el cliente escriba la reabre. Mensaje entrante/saliente: id = `wamid` (idempotencia y estados). `contactName` y `customerStage` están copiados en la conversación y se sincronizan al editar el cliente.
-- Salida: `senderFor(org)` (`src/server/inbox/sender.ts`). Demo nunca llama a Meta; real lanza 503 hasta la Fase 9. Fuera de la ventana de 24 h solo notas internas (plantillas en Fase 7).
+- Salida: `senderFor(org)` (`src/server/inbox/sender.ts`). Demo nunca llama a Meta; real usa la Graph API con las credenciales de la empresa (`withGraph` en `src/server/whatsapp/service.ts`, que traduce los errores de Meta con `explainGraphError` y marca la cuenta en error si el token venció). Fuera de la ventana de 24 h solo plantillas aprobadas.
 - Adjuntos: Storage es solo del servidor (`storage.rules` niega todo); el navegador los pide a `/api/conversations/{id}/messages/{msgId}/media`, que verifica alcance.
 - Asignación: la decide `ingestInbound` en la misma transacción (responsable activo → dueño del cliente → reglas de `settings/assignment`: zona y turno rotativo por `member.lastAutoAssignedAt`). La lógica pura está en `src/lib/assignment.ts`. El lead nunca retrocede por eventos automáticos (`advanceLead`) y guarda la fecha de cada paso en `statusAt`.
 - Demoras: `awaitingSince` = primer mensaje sin respuesta; `runSlaCheck` (`src/server/inbox/sla-core.ts`) avisa una vez por espera. Lo dispara `/api/cron/sla` (Bearer CRON_SECRET, cada 5 min en `vercel.json`) o el botón de Configuración → Asignación.
@@ -46,6 +46,10 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - Plantillas: variables con nombre (`{{nombre}}`…) que se envían a Meta en formato posicional (`toMetaBody` en `src/lib/templates.ts`). Solo se envían las `aprobada`; editar el texto de una aprobada la vuelve a borrador. En el demo el estado se simula a mano. Escribirle al cliente (texto o plantilla) deja la conversación en atención, aunque estuviera cerrada.
 - Dashboard: `getDashboard` (`src/server/dashboard/service.ts`) lee solo los documentos del período (con `.select()`) y cuenta en memoria con `src/lib/metrics.ts` (puro). El alcance propio/equipo/todo y los filtros de vendedor/equipo se aplican sobre el responsable de cada dato (`scopeAllows`). Períodos en la zona de la empresa; si el período está en curso se compara con el mismo tramo del anterior. Definiciones: venta = pedido confirmado (por `statusAt.confirmado`, sin cancelados); conversión = leads del período que llegaron a `pedido_generado`; tiempo de respuesta = primer mensaje del lead → `firstResponseAt`, descontando lo que queda fuera de `settings/general.businessHours` si está configurado. Lo que no depende del período (abiertas, para reactivar, perdidos, pipeline abierto) se marca "Ahora". Rango personalizado: máximo 366 días.
 - Tipo de compra: al empezar a contar un pedido (`readCommercialEffects` con `purchase`) se guarda `Order.customerKind` (nuevo / recurrente / reactivado, `customerKindFor` en `src/lib/orders.ts`). Si el cliente estaba inactivo, perdido o para reactivar, comprar lo reactiva (vuelve a activo, se apaga `needsReactivation`, queda `cliente.reactivado` en el historial). Un pedido sin `leadId` se vincula al lead abierto más reciente del cliente.
+- WhatsApp real (`src/server/whatsapp/`): webhook único `/api/webhooks/whatsapp` (público, sin `apiRoute`). `acceptWebhook` reparte el payload por empresa con `whatsappRoutes/{phone_<id>|waba_<id>}` (raíz) y valida la firma de CADA parte con el App Secret de su empresa (o `WHATSAPP_APP_SECRET` de la plataforma): una empresa no puede inyectar eventos de otra. Guarda el evento en `webhookEvents` (TTL 30 días por `expireAt`), responde 200 y procesa con `after()`; lo que falla lo reintenta el cron (`retryWebhookEvents`). Nunca se enruta al demo. Los núcleos (`webhook-core`, `accounts-core`, `graph`, `secret-box`, `signature`) no dependen de Next.
+- Secretos (token, App Secret, Verify Token, secreto de conectores): AES-256-GCM con `SECRETS_ENCRYPTION_KEY` y el contexto `<orgId>:<campo>` como dato autenticado (`secret-box.ts`). Nunca vuelven al navegador ni a la auditoría (solo los últimos 4 del token). Conectar el número prueba los datos contra Meta y suscribe la app ANTES de guardar.
+- Plantillas reales: "Enviar a Meta" (`submitTemplate`) y la aprobación llega por el webhook `message_template_status_update` (o "Sincronizar"). Enviada a Meta no se renombra; borrarla la borra también en Meta.
+- Conectores (`src/server/connectors/`): `outbox` firmado HMAC (`X-CRM-Signature`, `X-CRM-Delivery`) con reintentos 1 min…24 h; lo procesa el cron. Entrada del estado del reparto en `/api/integrations/gestion/{orgId}` (firmada), aplicada con una sesión de sistema y `source: "gestion"` para no devolver el eco. URL del conector: https y sin direcciones internas (`checkConnectorUrl`). Contrato en `docs/CONECTOR-GESTION.md`. El demo no se conecta con nada.
 - Bandeja en tiempo real desde el navegador: las consultas salen de `inboxQuery()` (`src/lib/inbox-filters.ts`) y el vendedor SIEMPRE filtra `assigneeId == uid` (las reglas no son filtros).
 
 ## Comandos
@@ -56,6 +60,8 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - `npm run dev` · `npm run check` (typecheck + lint + test + build).
 - `npm run test:emulador` (alias `test:rules`) — reglas + ingestión contra el emulador (con los emuladores de desarrollo APAGADOS: usa los mismos puertos).
 - `npm run test:api` — API de punta a punta (con emuladores + seed + dev corriendo).
+- `npm run test:whatsapp` — circuito real de WhatsApp y del conector contra la empresa "prueba-real" y un simulador de Meta (`tests/support/mock-meta.ts`, puerto 4010). Requiere emuladores + dev con `.env.local` que tenga las claves de desarrollo y `WHATSAPP_GRAPH_BASE_URL=http://127.0.0.1:4010`.
+- Producción: `docs/PUESTA-EN-PRODUCCION.md`.
 
 ## Estado
 
@@ -94,12 +100,19 @@ desde la bandeja también fuera de las 24 h), automatizaciones SI → ENTONCES (
 pedido confirmado, sin compras; condiciones por etapa y zona; demora; 6 acciones), registro de ejecuciones,
 "Ejecutar ahora" y cron. Tipos de automatización estrictos (antes eran parámetros sueltos).
 
-Fase 8 cerrada (pendiente de confirmación del dueño para pasar a la Fase 9):
+Fase 8 cerrada:
 dashboard con filtros (hoy, ayer, 7 y 30 días, mes actual y anterior, rango personalizado; vendedor y equipo según
 alcance), comparación con el período anterior, KPIs de ventas / leads / clientes / conversaciones con su definición,
 gráficos por hora/día/mes con tooltip y tabla, embudo de leads, embudo comercial, rendimiento y detalle por vendedor,
 clientes nuevos vs. recurrentes vs. reactivados, API `GET /api/dashboard`. Historia de 60 días en el demo.
-Pruebas: 112 unitarias, 53 de emulador, 57 de API.
+
+Fase 9 cerrada (pendiente de confirmación del dueño para pasar a la Fase 10):
+WhatsApp Cloud API real: conexión del número desde Configuración (probada contra Meta, token cifrado), webhook con
+firma por empresa, enrutamiento multiempresa, verificación, reintentos, envío de texto/archivos/plantillas, estados de
+entrega, confirmación de lectura, descarga de adjuntos (al recibir o al abrir), plantillas enviadas a Meta y su
+aprobación por webhook o sincronización, errores de Meta traducidos. Conector con el sistema de gestión (cola firmada
+con reintentos, prueba, reintento manual, estado del reparto entrante sin eco). Documentación de producción.
+Pruebas: 123 unitarias, 69 de emulador, 57 de API, 13 de WhatsApp real (simulador).
 
 Cambios sobre lo heredado: `Order.driverId`; marca de lectura de notificaciones exige booleano; el supervisor
 tiene `asignar` sobre clientes (equipo); notas, contactos y actividades ya no son legibles por el vendedor desde
