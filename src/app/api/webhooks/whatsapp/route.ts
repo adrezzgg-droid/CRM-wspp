@@ -18,7 +18,10 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams;
   const ok = q.get("hub.mode") === "subscribe" && (await verifyWebhookToken(webhookDeps(), q.get("hub.verify_token")));
   if (!ok) return NextResponse.json({ error: "Verify Token inválido" }, { status: 403 });
-  return new Response(q.get("hub.challenge") ?? "", { status: 200, headers: { "Content-Type": "text/plain" } });
+  // Meta manda un número; no se devuelve otra cosa (evita reflejar contenido arbitrario).
+  const challenge = q.get("hub.challenge") ?? "";
+  if (!/^[\w-]{1,128}$/.test(challenge)) return NextResponse.json({ error: "hub.challenge inválido" }, { status: 400 });
+  return new Response(challenge, { status: 200, headers: { "Content-Type": "text/plain" } });
 }
 
 export async function POST(req: NextRequest) {

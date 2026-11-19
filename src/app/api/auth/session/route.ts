@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { adminAuth } from "@/server/firebase/admin";
+import { adminAuth, adminDb } from "@/server/firebase/admin";
+import { syncAccessScopes } from "@/server/members/scope-core";
+import { orgPath } from "@/types/model";
 import { serverEnv } from "@/server/env";
 import { getSession, loadPrincipal, SESSION_COOKIE, type PrincipalError } from "@/server/auth/session";
 import { ApiError, assertSameOriginIfMutating, errorResponse } from "@/server/api/handler";
@@ -44,6 +46,10 @@ export async function POST(req: NextRequest) {
     const principal = await loadPrincipal(decoded.uid, decoded.email ?? "", decoded);
     if ("error" in principal) throw new ApiError(403, PRINCIPAL_MESSAGES[principal.error]);
     const { session } = principal;
+
+    // Fichas anteriores al alcance en reglas (Fase 10): se completa al entrar.
+    const me = await adminDb().collection(orgPath(session.orgId, "members")).doc(session.uid).get();
+    if (me.get("inboxScope") === undefined) await syncAccessScopes(adminDb(), session.orgId);
 
     const expiresIn = serverEnv().SESSION_DAYS * 24 * 60 * 60 * 1000;
     const cookie = await adminAuth().createSessionCookie(parsed.data.idToken, { expiresIn });

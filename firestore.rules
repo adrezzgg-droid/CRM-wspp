@@ -7,138 +7,64 @@ rules_version = '2';
 //     y solo se puede leer dentro de la propia organización.
 //  2. El cliente es SOLO LECTURA. Toda escritura pasa por la API del servidor
 //     (Admin SDK), que valida datos, aplica permisos y registra auditoría.
-//  3. Los secretos (token de WhatsApp) no son legibles ni escribibles desde el
-//     cliente bajo ninguna circunstancia.
-//  4. Activity, auditLogs y webhook events son de solo inserción desde servidor.
-//
-// Esta matriz debe mantenerse alineada con src/server/permissions/matrix.ts.
+//  3. Mínimo privilegio: el navegador solo lee lo que usa en tiempo real
+//     (bandeja: conversaciones, mensajes y el lead; y sus notificaciones). Todo
+//     lo demás le llega filtrado por el servidor, así que acá se niega.
+//  4. El alcance de la bandeja (todo / equipo / propio) sale de la ficha del
+//     usuario (`inboxScope` y `scopeUids`), que el servidor recalcula cuando
+//     cambian roles, permisos o equipos (src/server/members/scope-core.ts).
+//     Así las reglas respetan los permisos personalizados por empresa y un
+//     usuario dado de baja deja de leer aunque su token siga vigente.
+//  5. Los secretos, colas internas y eventos de webhook nunca se leen ni
+//     escriben desde el cliente.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function claimOrg() { return request.auth.token.orgId; }
-    function claimRole() { return request.auth.token.role; }
-    function inOrg(orgId) { return signedIn() && claimOrg() == orgId; }
+    function inOrg(orgId) { return signedIn() && request.auth.token.orgId == orgId; }
 
-    function isAdmin()      { return claimRole() == 'admin'; }
-    function isSupervisor() { return claimRole() == 'supervisor'; }
-    function isSeller()     { return claimRole() == 'vendedor'; }
-    function isReadOnly()   { return claimRole() == 'solo_lectura'; }
-    function isDriver()     { return claimRole() == 'repartidor'; }
-
-    // Roles que pueden ver datos comerciales de la organización
-    function canSeeCommercial() {
-      return isAdmin() || isSupervisor() || isSeller() || isReadOnly();
+    function me(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data;
     }
 
-    // Documento "propio": asignado al usuario actual
-    function isMine(data) {
-      return data.get('assigneeId', data.get('ownerId', data.get('sellerId', ''))) == request.auth.uid;
+    // ¿Puede ver en la bandeja algo cuyo responsable es `owner`? (null = sin asignar)
+    function inboxSees(orgId, owner) {
+      let m = me(orgId);
+      let scope = m.get('inboxScope', '');
+      return m.get('active', false) == true && (
+        scope == 'todo'
+        || (scope == 'equipo' && (owner == null || owner in m.get('scopeUids', [])))
+        || (scope == 'propio' && owner == request.auth.uid)
+      );
     }
 
-    // Ven toda la organización desde el navegador. El vendedor no: lo suyo le
-    // llega ya filtrado por el servidor (notas, contactos, historial).
-    function seesWholeOrg() { return isAdmin() || isSupervisor() || isReadOnly(); }
-
-    // Visibilidad con alcance: admin/supervisor/solo lectura ven todo lo de la
-    // organización (el filtrado fino por equipo lo aplica el servidor); el
-    // vendedor únicamente lo propio.
-    function scopedRead(data) {
-      return isAdmin() || isSupervisor() || isReadOnly() || (isSeller() && isMine(data));
-    }
-
-    // Todo lo no declarado queda denegado.
+    // Todo lo no declarado queda denegado (clientes, pedidos, notas, auditoría…).
     match /{document=**} { allow read, write: if false; }
 
     match /organizations/{orgId} {
-      allow read: if inOrg(orgId);
-      allow write: if false;
-
-      match /members/{uid} {
-        allow read: if inOrg(orgId) && (isAdmin() || isSupervisor() || request.auth.uid == uid);
-        allow write: if false;
-      }
-
-      match /teams/{id}  { allow read: if inOrg(orgId) && (isAdmin() || isSupervisor()); allow write: if false; }
-      match /zones/{id}  { allow read: if inOrg(orgId); allow write: if false; }
-      match /tags/{id}   { allow read: if inOrg(orgId) && !isDriver(); allow write: if false; }
-      match /products/{id} { allow read: if inOrg(orgId) && !isDriver(); allow write: if false; }
-      match /pipelines/{id} { allow read: if inOrg(orgId) && canSeeCommercial(); allow write: if false; }
-      match /whatsappTemplates/{id} { allow read: if inOrg(orgId) && canSeeCommercial(); allow write: if false; }
-
-      match /customers/{id} {
-        allow read: if inOrg(orgId) && scopedRead(resource.data);
-        allow write: if false;
-      }
-      match /contacts/{id} {
-        allow read: if inOrg(orgId) && seesWholeOrg();
-        allow write: if false;
-      }
-      match /leads/{id} {
-        allow read: if inOrg(orgId) && scopedRead(resource.data);
-        allow write: if false;
-      }
-
       match /conversations/{id} {
-        allow read: if inOrg(orgId) && scopedRead(resource.data);
+        // OJO: `resource.data.assigneeId` directo, NO `.get('assigneeId', null)`. En una
+        // consulta sin filtro el motor usa el valor por defecto (null = "sin asignar")
+        // y la dejaría pasar entera. assigneeId siempre existe (null si no tiene dueño).
+        allow read: if inOrg(orgId) && inboxSees(orgId, resource.data.assigneeId);
         allow write: if false;
 
         match /messages/{messageId} {
           // Hereda el alcance de la conversación padre.
-          allow read: if inOrg(orgId) &&
-            scopedRead(get(/databases/$(database)/documents/organizations/$(orgId)/conversations/$(id)).data);
+          allow read: if inOrg(orgId) && inboxSees(orgId,
+            get(/databases/$(database)/documents/organizations/$(orgId)/conversations/$(id)).data.get('assigneeId', null));
           allow write: if false;
         }
       }
-      match /assignments/{id} {
-        allow read: if inOrg(orgId) && (isAdmin() || isSupervisor());
-        allow write: if false;
-      }
 
-      match /opportunities/{id} {
-        allow read: if inOrg(orgId) && scopedRead(resource.data);
+      // El recorrido del lead se muestra en el panel de la conversación: se lee de a uno
+      // (ownerId puede faltar, así que una consulta por lista no se podría acotar).
+      match /leads/{id} {
+        allow get: if inOrg(orgId) && inboxSees(orgId, resource.data.get('ownerId', null));
+        allow list: if false;
         allow write: if false;
       }
-      match /orders/{id} {
-        // El repartidor ve los pedidos que tiene que entregar (driverId), no
-        // los vendidos (sellerId), por eso no usa isMine().
-        allow read: if inOrg(orgId) && (scopedRead(resource.data)
-          || (isDriver() && resource.data.get('driverId', '') == request.auth.uid));
-        allow write: if false;
-      }
-      match /tasks/{id} {
-        allow read: if inOrg(orgId) && (scopedRead(resource.data) || (isDriver() && isMine(resource.data)));
-        allow write: if false;
-      }
-      match /notes/{id} {
-        allow read: if inOrg(orgId) && seesWholeOrg();
-        allow write: if false;
-      }
-
-      match /activities/{id} {
-        allow read: if inOrg(orgId) && seesWholeOrg();
-        allow write: if false;
-      }
-      match /auditLogs/{id} {
-        allow read: if inOrg(orgId) && isAdmin();
-        allow write: if false;
-      }
-
-      match /whatsappAccounts/{id} {
-        // Datos públicos de la cuenta (sin token). Solo administración.
-        allow read: if inOrg(orgId) && isAdmin();
-        allow write: if false;
-      }
-      match /automations/{id} {
-        allow read: if inOrg(orgId) && isAdmin();
-        allow write: if false;
-      }
-      match /automationRuns/{id} {
-        allow read: if inOrg(orgId) && isAdmin();
-        allow write: if false;
-      }
-      match /automationJobs/{id} { allow read, write: if false; }
 
       match /notifications/{id} {
         allow read: if inOrg(orgId) && resource.data.userId == request.auth.uid;
@@ -149,15 +75,6 @@ service cloud.firestore {
           && request.resource.data.read is bool;
         allow create, delete: if false;
       }
-
-      match /outbox/{id}   { allow read, write: if false; }
-      match /secrets/{id}  { allow read, write: if false; }
-      match /settings/{id} { allow read: if inOrg(orgId); allow write: if false; }
     }
-
-    match /webhookEvents/{id} { allow read, write: if false; }
-    // Enrutamiento de webhooks (número / WABA / Verify Token → empresa): solo el servidor.
-    match /whatsappRoutes/{id} { allow read, write: if false; }
-    match /whatsappVerifyTokens/{id} { allow read, write: if false; }
   }
 }

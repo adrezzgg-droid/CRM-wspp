@@ -6,6 +6,7 @@ import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import type { Role } from "../../src/server/permissions/matrix.ts";
+import { syncAccessScopes } from "../../src/server/members/scope-core.ts";
 import { DEFAULT_PIPELINE_ID, DEFAULT_PIPELINE_STAGES, DEFAULT_TAGS, newMember, newOrganization } from "../../src/server/org/defaults.ts";
 
 export function isEmulator(): boolean {
@@ -95,6 +96,7 @@ export async function upsertMember(
 ): Promise<void> {
   const member = newMember({ ...input, actor: "system" });
   await db.doc(`organizations/${input.orgId}/members/${input.uid}`).set(member);
+  await syncAccessScopes(db, input.orgId);
   await auth.setCustomUserClaims(input.uid, { orgId: input.orgId, role: input.role });
   // Invalida sesiones con claims viejos.
   await auth.revokeRefreshTokens(input.uid);

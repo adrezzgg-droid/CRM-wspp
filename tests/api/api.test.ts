@@ -64,6 +64,7 @@ interface ApiData {
   details: { path: string[] }[];
   error?: string;
   conversationId: string;
+  messageId: string;
   assigneeId: string | null;
   assignmentReason?: string;
   enabled: boolean;
@@ -785,6 +786,57 @@ describe("dashboard y métricas", () => {
     assert.equal(saved.customerKind, "nuevo");
     const updated = (await call("admin", "GET", `/api/conversations/${sim.data.conversationId}`)).data.conversation;
     assert.notEqual(updated.customerStage, "prospecto", "dejó de ser prospecto (la etapa se copia a la conversación)");
+  });
+});
+
+describe("seguridad (Fase 10)", () => {
+  test("cada página trae una CSP con nonce nuevo y sin orígenes de terceros para scripts", async () => {
+    const a = await fetch(`${BASE}/login`);
+    const b = await fetch(`${BASE}/login`);
+    const csp = a.headers.get("content-security-policy") ?? "";
+    assert.match(csp, /script-src 'self' 'nonce-[^']+' 'strict-dynamic'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.match(csp, /object-src 'none'/);
+    assert.notEqual(csp, b.headers.get("content-security-policy"), "nonce distinto por pedido");
+    assert.equal(a.headers.get("x-frame-options"), "DENY");
+    assert.equal(a.headers.get("cross-origin-opener-policy"), "same-origin");
+  });
+
+  test("la redirección después del login no sale del sitio", async () => {
+    for (const next of ["//evil.com", "/\\evil.com", "https://evil.com"]) {
+      const res = await fetch(`${BASE}/login?next=${encodeURIComponent(next)}`, { headers: { Cookie: cookies.admin }, redirect: "manual" });
+      const location = res.headers.get("location") ?? "";
+      assert.ok(!/evil\.com/.test(location), `${next} → ${location}`);
+    }
+  });
+
+  test("los adjuntos se sirven aislados (sandbox, nosniff) y las imágenes en línea", async () => {
+    const sim = await upload("admin", "/api/demo/inbound", { phone: randomPhone(), name: "Adjunto seguro", type: "image" }, { name: "foto.png", type: "image/png", bytes: PNG });
+    assert.equal(sim.status, 200, JSON.stringify(sim.data));
+    const conv = await call("admin", "GET", `/api/conversations/${sim.data.conversationId}`);
+    assert.equal(conv.status, 200);
+    const res = await fetch(`${BASE}/api/conversations/${sim.data.conversationId}/messages/${sim.data.messageId}/media`, { headers: { Cookie: cookies.admin } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("content-type"), "image/png");
+    assert.match(res.headers.get("content-disposition") ?? "", /^inline/);
+    assert.match(res.headers.get("content-security-policy") ?? "", /sandbox/);
+    assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  });
+
+  test("auditoría: solo el admin la exporta, en CSV para Excel, y exportar también queda registrado", async () => {
+    assert.equal((await call("vendedor1", "GET", "/api/audit/export")).status, 403);
+    assert.equal((await call("supervisor", "GET", "/api/audit/export")).status, 403);
+    assert.equal((await call("admin", "GET", "/api/audit/export?categoria=inventada")).status, 422);
+    const first = await fetch(`${BASE}/api/audit/export?categoria=sesiones`, { headers: { Cookie: cookies.admin } });
+    assert.equal(first.status, 200);
+    assert.match(first.headers.get("content-type") ?? "", /text\/csv/);
+    const bytes = new Uint8Array(await first.arrayBuffer());
+    assert.deepEqual([...bytes.slice(0, 3)], [0xef, 0xbb, 0xbf], "con BOM para que Excel lea los acentos");
+    const text = new TextDecoder().decode(bytes);
+    assert.ok(text.startsWith("Fecha,Usuario,Acción"), "encabezado");
+    assert.match(text, /Inició sesión/);
+    const again = await (await fetch(`${BASE}/api/audit/export?categoria=sesiones`, { headers: { Cookie: cookies.admin } })).text();
+    assert.match(again, /Exportó la auditoría/);
   });
 });
 

@@ -29,7 +29,7 @@ const receiver = (async (_url: string | URL | Request, init?: RequestInit) => {
   return new Response(status < 300 ? "ok" : "falló", { status });
 }) as typeof fetch;
 
-const deps: OutboxDeps = { db, secretKey: KEY, fetch: receiver, now: () => NOW };
+const deps: OutboxDeps = { db, secretKey: KEY, fetch: receiver, now: () => NOW, resolve: async () => ["93.184.216.34"] };
 
 async function item(id: string, extra: Record<string, unknown> = {}) {
   await org.collection("outbox").doc(id).set({

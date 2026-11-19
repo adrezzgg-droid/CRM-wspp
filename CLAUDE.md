@@ -10,6 +10,7 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - **Base y auth:** Firebase (Firestore + Firebase Auth + Storage). Servidor con Firebase Admin SDK.
 - **Multiempresa:** todo vive bajo `organizations/{orgId}/...`. Ninguna colección de negocio en la raíz.
 - **Escrituras:** el cliente es solo lectura (ver `firestore.rules`). Toda escritura pasa por la API del servidor, que valida con zod, aplica permisos y registra auditoría.
+- **Lecturas desde el navegador (mínimo privilegio):** solo la bandeja (conversaciones, mensajes, el lead de a uno) y las notificaciones propias. Todo lo demás lo entrega el servidor; en las reglas se niega. Si una pantalla nueva necesita leer Firestore directo, se abre la regla puntual con su prueba.
 - **Roles:** admin, supervisor, vendedor, repartidor, solo_lectura. Matriz en `src/server/permissions/matrix.ts` (debe coincidir con `firestore.rules`). Los roles viajan como custom claims (`orgId`, `role`).
 - **Secretos:** el Access Token de WhatsApp nunca llega al frontend. Se guarda cifrado (AES-256-GCM, clave en variable de entorno) en `organizations/{orgId}/secrets/whatsapp`.
 - **WhatsApp:** Meta Cloud API. El webhook valida firma `X-Hub-Signature-256`, guarda el evento crudo, responde 200 rápido y procesa de forma idempotente (el `wamid` es el id del mensaje). Respetar la ventana de 24 h: fuera de ella, solo plantillas aprobadas.
@@ -50,13 +51,17 @@ Idioma de la interfaz y de la documentación: español (Argentina, voseo).
 - Secretos (token, App Secret, Verify Token, secreto de conectores): AES-256-GCM con `SECRETS_ENCRYPTION_KEY` y el contexto `<orgId>:<campo>` como dato autenticado (`secret-box.ts`). Nunca vuelven al navegador ni a la auditoría (solo los últimos 4 del token). Conectar el número prueba los datos contra Meta y suscribe la app ANTES de guardar.
 - Plantillas reales: "Enviar a Meta" (`submitTemplate`) y la aprobación llega por el webhook `message_template_status_update` (o "Sincronizar"). Enviada a Meta no se renombra; borrarla la borra también en Meta.
 - Conectores (`src/server/connectors/`): `outbox` firmado HMAC (`X-CRM-Signature`, `X-CRM-Delivery`) con reintentos 1 min…24 h; lo procesa el cron. Entrada del estado del reparto en `/api/integrations/gestion/{orgId}` (firmada), aplicada con una sesión de sistema y `source: "gestion"` para no devolver el eco. URL del conector: https y sin direcciones internas (`checkConnectorUrl`). Contrato en `docs/CONECTOR-GESTION.md`. El demo no se conecta con nada.
-- Bandeja en tiempo real desde el navegador: las consultas salen de `inboxQuery()` (`src/lib/inbox-filters.ts`) y el vendedor SIEMPRE filtra `assigneeId == uid` (las reglas no son filtros).
+- Bandeja en tiempo real desde el navegador: las consultas salen de `inboxQuery()` (`src/lib/inbox-filters.ts`, devuelve `variants`: la lista es la unión). Vendedor: SIEMPRE `assigneeId == uid`. Supervisor: `assigneeId in <su equipo>` (en tandas de ≤30 combinaciones) + `assigneeId == null` por separado (las reglas no son filtros). Un test verifica que cada consulta tenga su índice en `firestore.indexes.json`.
+- Reglas de la bandeja (`inboxSees` en `firestore.rules`): leen `inboxScope` / `scopeUids` / `active` de la ficha del usuario. Los mantiene `syncAccessScopes` (`src/server/members/scope-core.ts`) al cambiar usuarios, equipos o permisos (y el seed y el alta de usuarios); si a una ficha le falta, se completa al iniciar sesión (`npm run alcances:sincronizar` para todas). En las reglas, NUNCA `resource.data.get(campo, default)` para el responsable: en consultas sin filtro el motor usa el default y deja pasar todo (pasó: hay prueba de regresión; correr `npm run test:emulador`, el emulador de desarrollo no lo mostró).
+- Páginas: CSP con nonce por pedido en `src/proxy.ts` (todas las páginas se renderizan por pedido: `connection()` en `app/layout.tsx`). Nada de scripts de terceros ni `dangerouslySetInnerHTML`. Archivos de usuarios/clientes: siempre con `attachmentHeaders()` (`src/lib/safe-content.ts`). Redirecciones con `safeNextPath()`.
+- Auditoría (`/auditoria`, solo admin): `src/server/audit-query.ts`, nombres y categorías en `src/lib/audit-labels.ts` (un test exige que toda acción registrada tenga nombre). Exportar CSV también se registra.
 
 ## Comandos
 
 - `npm run emulators` — Auth + Firestore + Storage locales (proyecto `demo-crm-whatsapp`, no requiere cuenta).
 - `npm run seed:demo` — reinicia la organización demo: un usuario por rol, 12 clientes, conversaciones, catálogo, oportunidades, tareas, plantillas, automatizaciones de ejemplo y 60 días de historia para el dashboard (`scripts/lib/demo-history.ts`: los leads entran por la ingestión real con la fecha de entonces, vía el reloj opcional de `ingestInbound`; es determinística). Contraseña en `scripts/seed-demo.ts`, solo emulador.
 - `npm run org:crear -- --nombre "..." --admin-email ... --admin-nombre "..."` — organización real.
+- `npm run alcances:sincronizar` (`-- --remoto` en producción) — recalcula el alcance de la bandeja de todas las fichas.
 - `npm run dev` · `npm run check` (typecheck + lint + test + build).
 - `npm run test:emulador` (alias `test:rules`) — reglas + ingestión contra el emulador (con los emuladores de desarrollo APAGADOS: usa los mismos puertos).
 - `npm run test:api` — API de punta a punta (con emuladores + seed + dev corriendo).
@@ -106,13 +111,21 @@ alcance), comparación con el período anterior, KPIs de ventas / leads / client
 gráficos por hora/día/mes con tooltip y tabla, embudo de leads, embudo comercial, rendimiento y detalle por vendedor,
 clientes nuevos vs. recurrentes vs. reactivados, API `GET /api/dashboard`. Historia de 60 días en el demo.
 
-Fase 9 cerrada (pendiente de confirmación del dueño para pasar a la Fase 10):
+Fase 9 cerrada:
 WhatsApp Cloud API real: conexión del número desde Configuración (probada contra Meta, token cifrado), webhook con
 firma por empresa, enrutamiento multiempresa, verificación, reintentos, envío de texto/archivos/plantillas, estados de
 entrega, confirmación de lectura, descarga de adjuntos (al recibir o al abrir), plantillas enviadas a Meta y su
 aprobación por webhook o sincronización, errores de Meta traducidos. Conector con el sistema de gestión (cola firmada
 con reintentos, prueba, reintento manual, estado del reparto entrante sin eco). Documentación de producción.
 Pruebas: 123 unitarias, 69 de emulador, 57 de API, 13 de WhatsApp real (simulador).
+
+Fase 10 cerrada (última del plan):
+auditoría de seguridad con 7 hallazgos corregidos (supervisor leía toda la empresa desde el navegador; regla con valor
+por defecto que dejaba pasar consultas sin filtro; lecturas de más; adjuntos HTML/SVG ejecutables; redirección abierta;
+conector a IP interna por DNS; Next.js con vulnerabilidad crítica → 16.4.6, zod → 4.6.7). Reglas de Firestore con mínimo
+privilegio y alcance por equipo, CSP con nonce, COOP, auditoría visible y exportable, migración de alcances, test de
+índices de la bandeja. Ver `docs/SEGURIDAD.md`.
+Pruebas: 131 unitarias, 66 de emulador, 61 de API, 13 de WhatsApp real (simulador).
 
 Cambios sobre lo heredado: `Order.driverId`; marca de lectura de notificaciones exige booleano; el supervisor
 tiene `asignar` sobre clientes (equipo); notas, contactos y actividades ya no son legibles por el vendedor desde

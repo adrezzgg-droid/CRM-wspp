@@ -15,7 +15,14 @@ sigue funcionando igual: la empresa "demo" nunca se conecta a Meta.
    ```
    `firestore.indexes.json` incluye la **política TTL** sobre
    `webhookEvents.expireAt`: los eventos crudos se borran solos a los 30 días.
-3. **Configuración → Cuentas de servicio → Generar clave privada.** Con ese
+   **Publicá las reglas y los índices cada vez que cambien.** Producción exige
+   índices que el emulador no pide; `npm test` verifica los de la bandeja.
+3. Si ya había empresas antes de la Fase 10, recalculá una vez el alcance de
+   la bandeja que usan las reglas (si no, se completa solo al iniciar sesión):
+   ```
+   npm run alcances:sincronizar -- --remoto
+   ```
+4. **Configuración → Cuentas de servicio → Generar clave privada.** Con ese
    archivo se completan:
    - `FIREBASE_PROJECT_ID`
    - `FIREBASE_CLIENT_EMAIL`
@@ -119,3 +126,9 @@ npm run test:whatsapp
 y recorre todo el circuito real con la empresa de prueba "prueba-real":
 conexión, webhook firmado, envío y archivos, plantillas, token vencido y el
 conector con gestión.
+
+## Seguridad
+
+Ver `docs/SEGURIDAD.md`: controles, pruebas y riesgos aceptados. Antes de
+cada publicación, revisar `npm audit --omit=dev` y actualizar Next.js si hay
+una versión de seguridad.

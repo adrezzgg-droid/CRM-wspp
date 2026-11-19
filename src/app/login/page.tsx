@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { safeNextPath } from "@/lib/safe-content";
 import { MessageCircle } from "lucide-react";
 import { getSession } from "@/server/auth/session";
 import { landingFor } from "@/lib/navigation";
@@ -10,12 +11,8 @@ export const metadata: Metadata = { title: "Iniciar sesión" };
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "CRM WhatsApp";
 
 /** Solo rutas internas: evita redirecciones abiertas a otros sitios. */
-function safeNext(value: string | string[] | undefined): string | undefined {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : undefined;
-}
-
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
-  const next = safeNext((await searchParams).next);
+  const next = safeNextPath((await searchParams).next);
   const session = await getSession();
   if (session) redirect(next ?? landingFor(session.role, session.overrides));
 

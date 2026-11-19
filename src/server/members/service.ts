@@ -12,6 +12,7 @@ import { getMembers, getTeams, getZones, OWNER_ROLES } from "@/server/org/data";
 import { newMember } from "@/server/org/defaults";
 import type { memberCreate, memberUpdate, teamInput } from "@/lib/schemas";
 import { checkCreate, checkEdit, checkRoleChange, checkStatusChange } from "./guards";
+import { syncAccessScopes } from "./scope-core";
 
 type CreateInput = z.output<typeof memberCreate>;
 type UpdateInput = z.output<typeof memberUpdate>;
@@ -131,6 +132,7 @@ export async function createMember(session: Session, input: CreateInput) {
     after: publicMember(member),
   });
   await batch.commit();
+  await syncAccessScopes(adminDb(), session.orgId);
   await auth.setCustomUserClaims(uid, { orgId: session.orgId, role: input.role });
 
   // Enlace para que el usuario defina su contraseña (no se maneja ninguna contraseña acá).
@@ -169,6 +171,7 @@ export async function updateMember(session: Session, uid: string, input: UpdateI
     after: publicMember({ ...current, ...patch }),
   }, now);
   await batch.commit();
+  await syncAccessScopes(adminDb(), session.orgId);
 
   const auth = adminAuth();
   if (input.displayName && input.displayName !== current.displayName) {
@@ -206,6 +209,7 @@ export async function setMemberActive(session: Session, uid: string, active: boo
     after: { active },
   }, now);
   await batch.commit();
+  await syncAccessScopes(adminDb(), session.orgId);
 
   const auth = adminAuth();
   await auth.updateUser(uid, { disabled: !active });
@@ -280,6 +284,7 @@ export async function createTeam(session: Session, input: TeamInput): Promise<Te
     after: { name: team.name, leaderIds: team.leaderIds, memberIds: team.memberIds },
   }, now);
   await batch.commit();
+  await syncAccessScopes(adminDb(), session.orgId);
   return team;
 }
 
@@ -308,6 +313,7 @@ export async function updateTeam(session: Session, id: string, input: TeamInput)
     after: { name: input.name, ...next },
   }, now);
   await batch.commit();
+  await syncAccessScopes(adminDb(), session.orgId);
 }
 
 export async function deleteTeam(session: Session, id: string) {
@@ -325,6 +331,7 @@ export async function deleteTeam(session: Session, id: string) {
     before: { name: current.name, leaderIds: current.leaderIds, memberIds: current.memberIds },
   });
   await batch.commit();
+  await syncAccessScopes(adminDb(), session.orgId);
 }
 
 /** Cada vendedor decide si recibe leads automáticos (p.ej. al salir a reparto o fuera de turno). */

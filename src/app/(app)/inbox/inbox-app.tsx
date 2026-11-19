@@ -37,7 +37,7 @@ export function InboxApp(props: InboxProps) {
   const [selectedResult, setSelectedResult] = useState<{ id: string; conversation: Conversation | null } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
-  const spec = useMemo(() => inboxQuery(filter, { uid: props.uid, scope: props.scope }), [filter, props.uid, props.scope]);
+  const spec = useMemo(() => inboxQuery(filter, { uid: props.uid, scope: props.scope, scopeUids: props.teamUids }), [filter, props.uid, props.scope, props.teamUids]);
   const listKey = filter;
   const current = listResult?.key === listKey ? listResult : null;
   const items = spec && current ? current.items : [];
@@ -58,25 +58,33 @@ export function InboxApp(props: InboxProps) {
   // Lista en tiempo real según el filtro.
   useEffect(() => {
     if (!ready || !spec) return;
-    const constraints: QueryConstraint[] = spec.clauses.map(([f, op, v]) => where(f, op, v));
-    const q = query(collection(firebaseClient().db, orgPath(props.orgId, "conversations")), ...constraints, orderBy("lastMessageAt", "desc"), limit(PAGE));
-    const team = new Set(props.teamUids);
-    const myTeams = new Set(props.myTeamIds);
-    return onSnapshot(
-      q,
-      (snap) => {
-        let rows = snap.docs.map((d) => ({ ...(d.data() as Conversation), id: d.id }));
-        // Supervisor: lo de su gente, y lo sin asignar que es de sus equipos o de ninguno.
-        if (spec.teamOnly) rows = rows.filter((c) => (c.assigneeId ? team.has(c.assigneeId) : !c.teamId || myTeams.has(c.teamId)));
-        setListResult({ key: listKey, items: rows, error: null });
-      },
-      (err) => {
-        console.error("[bandeja] lista", err);
-        const message = err.code === "failed-precondition" ? "Falta un índice en la base para este filtro. Avisale al administrador." : "No se pudo cargar la bandeja.";
-        setListResult({ key: listKey, items: [], error: message });
-      },
-    );
-  }, [ready, spec, listKey, props.orgId, props.teamUids, props.myTeamIds]);
+    // Una suscripción por consulta (el supervisor tiene varias: su equipo y lo sin asignar); se unen.
+    const parts = new Map<number, Conversation[]>();
+    const publish = () => {
+      if (parts.size < spec.variants.length) return;
+      const byId = new Map<string, Conversation>();
+      for (const rows of parts.values()) for (const c of rows) byId.set(c.id, c);
+      const items = [...byId.values()].sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0)).slice(0, PAGE);
+      setListResult({ key: listKey, items, error: null });
+    };
+    const unsubscribe = spec.variants.map((clauses, i) => {
+      const constraints: QueryConstraint[] = clauses.map(([f, op, v]) => where(f, op, v));
+      const q = query(collection(firebaseClient().db, orgPath(props.orgId, "conversations")), ...constraints, orderBy("lastMessageAt", "desc"), limit(PAGE));
+      return onSnapshot(
+        q,
+        (snap) => {
+          parts.set(i, snap.docs.map((d) => ({ ...(d.data() as Conversation), id: d.id })));
+          publish();
+        },
+        (err) => {
+          console.error("[bandeja] lista", err);
+          const message = err.code === "failed-precondition" ? "Falta un índice en la base para este filtro. Avisale al administrador." : "No se pudo cargar la bandeja.";
+          setListResult({ key: listKey, items: [], error: message });
+        },
+      );
+    });
+    return () => unsubscribe.forEach((u) => u());
+  }, [ready, spec, listKey, props.orgId]);
 
   // Conversación seleccionada en tiempo real (aunque no esté en el filtro actual).
   useEffect(() => {

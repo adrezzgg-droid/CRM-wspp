@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type { Organization } from "@/types/model";
 import { COLLECTIONS, orgPath } from "@/types/model";
 import { adminDb } from "@/server/firebase/admin";
+import { syncAccessScopes } from "@/server/members/scope-core";
 import { ApiError } from "@/server/api/handler";
 import { recordAuditIn } from "@/server/audit";
 import { can, type PolicyOverrides } from "@/server/permissions/matrix";
@@ -38,6 +39,8 @@ export async function savePermissions(session: Session, input: z.output<typeof p
     after: input.overrides,
   }, now);
   await batch.commit();
+  // El alcance de la bandeja que aplican las reglas de Firestore depende de los permisos.
+  await syncAccessScopes(adminDb(), session.orgId);
 }
 
 export async function updateOrganization(session: Session, input: z.output<typeof organizationUpdate>) {

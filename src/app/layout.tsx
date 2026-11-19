@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { connection } from "next/server";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -17,7 +18,10 @@ export const viewport: Viewport = {
   themeColor: "#1a6256",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // Todo se renderiza por pedido: así Next aplica el nonce de la CSP (src/proxy.ts)
+  // a sus scripts. Las páginas ya dependían de la sesión, así que no cambia el costo.
+  await connection();
   return (
     <html lang="es-AR" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
       <body className="h-full font-sans">{children}</body>

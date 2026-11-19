@@ -16,6 +16,7 @@ import { ingestInbound } from "../src/server/inbox/ingest-core.ts";
 import { msToZoned, zonedTimeToMs } from "../src/lib/tasks.ts";
 import { createOrganizationDocs, ensureUser, initAdmin, isEmulator, parseArgs, upsertMember } from "./lib/provision.ts";
 import { seedHistory } from "./lib/demo-history.ts";
+import { syncAccessScopes } from "../src/server/members/scope-core.ts";
 
 const ORG_ID = "demo";
 const ORG_NAME = "Distribuidora Demo";
@@ -452,6 +453,8 @@ console.log(`Historia: ${history.leads} leads y ${history.orders} pedidos de los
 await seedConversations(db, uids);
 await seedTasks(db, uids);
 await seedAutomations(db);
+// Alcance de la bandeja para las reglas de Firestore (depende de roles y equipos).
+await syncAccessScopes(db, ORG_ID);
 
 console.log(`Demo listo: "${ORG_NAME}" (${ORG_ID})`);
 for (const u of USERS) console.log(`  ${u.role.padEnd(13)} ${u.email}`);

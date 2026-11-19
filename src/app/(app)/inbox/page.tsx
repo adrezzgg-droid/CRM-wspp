@@ -41,7 +41,6 @@ export default async function InboxPage() {
       isDemo={session.org.isDemo}
       scope={ctx.scope}
       teamUids={[...ctx.teamUids]}
-      myTeamIds={myTeams.map((t) => t.id)}
       teams={(canAssign ? (ctx.scope === "todo" ? teams : myTeams) : []).map((t) => ({ id: t.id, name: t.name }))}
       sla={{ enabled: assignment.slaEnabled, minutes: assignment.slaMinutes }}
       members={members.map((m) => ({ id: m.id, name: m.displayName, role: m.role, active: m.active }))}

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ACTIONS, RESOURCES, ROLES } from "../server/permissions/matrix.ts";
 import { unknownVariables } from "./templates.ts";
 import { PERIOD_PRESETS } from "./metrics.ts";
+import { AUDIT_CATEGORY_IDS, type AuditCategory } from "./audit-labels.ts";
 
 const text = (max: number, label: string) =>
   z.string().trim().max(max, `${label}: máximo ${max} caracteres`);
@@ -518,3 +519,15 @@ export const gestionStatusInput = z
     reason: z.string().trim().max(300).optional(),
   })
   .refine((v) => v.orderId || v.number, { message: "Falta orderId o number", path: ["orderId"] });
+
+// ─────────────────────────────── Auditoría ──────────────────────────────────
+
+export const auditQuery = z.object({
+  /** uid de quien hizo el cambio, o "system" (automático). */
+  usuario: id.optional(),
+  categoria: z.enum(AUDIT_CATEGORY_IDS as [AuditCategory, ...AuditCategory[]]).optional(),
+  desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida").optional(),
+  hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida").optional(),
+  cursor: id.optional(),
+});
+export type AuditQuery = z.infer<typeof auditQuery>;

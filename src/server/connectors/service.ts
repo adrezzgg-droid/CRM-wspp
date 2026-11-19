@@ -32,7 +32,7 @@ function requirePerm(session: Session, action: Action) {
   if (!can(session.role, "integraciones", action, session.overrides)) throw new ApiError(403, "Solo un administrador configura las integraciones");
 }
 
-export const outboxDeps = () => ({ db: adminDb(), secretKey: secretKeyOrNull() });
+export const outboxDeps = () => ({ db: adminDb(), secretKey: secretKeyOrNull(), allowPrivate: usingEmulators() });
 
 async function readGestionSecret(orgId: string, key: Buffer | null): Promise<string | undefined> {
   const sealed = ((await secretsRef(orgId).get()).data() as IntegrationSecrets | undefined)?.gestion;

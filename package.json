@@ -16,17 +16,18 @@
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "test:api": "node --env-file-if-exists=.env.local --test tests/api/api.test.ts",
     "test:emulador": "firebase emulators:exec --only firestore --project demo-crm-whatsapp \"node --test tests/rules/firestore-rules.test.ts tests/inbox/ingest.test.ts tests/inbox/tasks-overdue.test.ts tests/inbox/automations.test.ts tests/inbox/webhook.test.ts tests/inbox/outbox.test.ts\"",
-    "test:whatsapp": "node --env-file-if-exists=.env.local --test tests/api/whatsapp-real.test.ts"
+    "test:whatsapp": "node --env-file-if-exists=.env.local --test tests/api/whatsapp-real.test.ts",
+    "alcances:sincronizar": "node --env-file-if-exists=.env.local scripts/sincronizar-alcances.ts"
   },
   "dependencies": {
     "firebase": "^12.19.0",
-    "firebase-admin": "^14.5.0",
+    "firebase-admin": "^14.5.1",
     "lucide-react": "^1.52.0",
-    "next": "16.3.8",
+    "next": "16.4.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
@@ -35,7 +36,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.8",
+    "eslint-config-next": "16.4.6",
     "firebase-tools": "^15.32.1",
     "tailwindcss": "^4",
     "typescript": "^5"
@@ -43,5 +44,10 @@
   "engines": {
     "node": ">=22.18"
   },
-  "type": "module"
+  "type": "module",
+  "overrides": {
+    "@firebase/firestore": {
+      "@grpc/grpc-js": "^1.14.5"
+    }
+  }
 }

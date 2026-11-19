@@ -13,6 +13,8 @@
  * creciente (1 min … 24 h). Otro 4xx = el receptor no lo acepta: queda en error
  * sin reintentar (se puede reintentar a mano después de corregirlo).
  */
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import type { Firestore } from "firebase-admin/firestore";
 import type { OutboxItem } from "../../types/model.ts";
 import { open } from "../whatsapp/secret-box.ts";
@@ -43,6 +45,42 @@ export interface OutboxDeps {
   secretKey: Buffer | null;
   fetch?: typeof fetch;
   now?: () => number;
+  /** Solo en desarrollo: permite mandar a localhost / redes internas. */
+  allowPrivate?: boolean;
+  /** Resolución DNS (se cambia en las pruebas). */
+  resolve?: (host: string) => Promise<string[]>;
+}
+
+/** ¿La IP es de loopback, red privada, link-local, CGNAT o reservada? */
+export function isPrivateAddress(ip: string): boolean {
+  const v = ip.toLowerCase().replace(/^\[|\]$/g, "");
+  const mapped = v.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return isPrivateAddress(mapped[1]);
+  if (isIP(v) === 4) {
+    const [a, b] = v.split(".").map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+  }
+  if (isIP(v) === 6) return v === "::" || v === "::1" || /^f[cd]/.test(v) || /^fe[89ab]/.test(v) || v.startsWith("ff");
+  return true;
+}
+
+const defaultResolve = async (host: string) => (await lookup(host, { all: true })).map((r) => r.address);
+
+/**
+ * El nombre del conector puede ser público y resolver a una IP interna (o
+ * cambiar de IP entre una vez y otra): se resuelve justo antes de cada envío.
+ */
+export async function assertPublicDestination(deps: OutboxDeps, url: string): Promise<string | null> {
+  if (deps.allowPrivate) return null;
+  const host = new URL(url).hostname.replace(/^\[|\]$/g, "");
+  let addresses: string[];
+  try {
+    addresses = isIP(host) ? [host] : await (deps.resolve ?? defaultResolve)(host);
+  } catch {
+    return `No se pudo resolver ${host}`;
+  }
+  if (!addresses.length || addresses.some(isPrivateAddress)) return `${host} apunta a una dirección interna: no se envía`;
+  return null;
 }
 
 export interface DeliveryResult {
@@ -69,6 +107,8 @@ export function deliveryRequest(orgId: string, item: Pick<OutboxItem, "id" | "ev
 
 export async function deliver(deps: OutboxDeps, orgId: string, url: string, secret: string, item: Pick<OutboxItem, "id" | "event" | "payload" | "createdAt">): Promise<DeliveryResult> {
   const { body, headers } = deliveryRequest(orgId, item, secret);
+  const blocked = await assertPublicDestination(deps, url).catch(() => "Dirección inválida");
+  if (blocked) return { ok: false, permanent: true, error: blocked };
   try {
     const res = await (deps.fetch ?? fetch)(url, { method: "POST", headers, body, redirect: "manual", signal: AbortSignal.timeout(15_000) });
     if (res.ok) return { ok: true, status: res.status };
