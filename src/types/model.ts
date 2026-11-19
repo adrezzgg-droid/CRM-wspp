@@ -351,6 +351,8 @@ export interface Opportunity extends Audited, TenantScoped {
 export interface OrderItem {
   productId: Id;
   name: string;
+  /** Código del producto al tomar el pedido (con él lo reconoce el sistema de gestión). */
+  sku?: string;
   qty: number;
   unitPrice: number;
 }

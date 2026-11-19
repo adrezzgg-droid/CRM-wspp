@@ -92,7 +92,18 @@ async function readOutboxConnectors(tx: Transaction, orgId: string, event: strin
     .map(([name]) => name);
 }
 
-function enqueueIn(tx: Transaction, session: Session, connectors: string[], event: string, order: Order, now: number) {
+/**
+ * Lo que necesita el sistema de gestión para reconocer el pedido: el teléfono y la dirección del
+ * cliente (para encontrarlo o darlo de alta), el código de cada producto y el email del vendedor.
+ */
+interface EnqueueContext {
+  customer?: Pick<Customer, "whatsappId" | "phone" | "address" | "locality">;
+  seller?: Pick<Member, "email" | "displayName">;
+  /** Códigos del catálogo, para pedidos tomados antes de que la línea guardara el suyo. */
+  skus?: Map<string, string | undefined>;
+}
+
+function enqueueIn(tx: Transaction, session: Session, connectors: string[], event: string, order: Order, now: number, ctx: EnqueueContext = {}) {
   for (const connector of connectors) {
     const ref = col(session.orgId, "outbox").doc();
     const item: OutboxItem = {
@@ -106,12 +117,17 @@ function enqueueIn(tx: Transaction, session: Session, connectors: string[], even
         number: order.number,
         customerId: order.customerId,
         customerName: order.customerName,
-        items: order.items,
+        customerPhone: ctx.customer?.whatsappId ?? ctx.customer?.phone ?? null,
+        customerAddress: ctx.customer?.address ?? null,
+        customerLocality: ctx.customer?.locality ?? null,
+        items: order.items.map((i) => ({ ...i, sku: i.sku ?? ctx.skus?.get(i.productId) ?? null })),
         total: order.total,
         currency: order.currency,
         deliveryAddress: order.deliveryAddress ?? null,
         deliveryDate: order.deliveryDate ?? null,
         sellerId: order.sellerId,
+        sellerEmail: ctx.seller?.email ?? null,
+        sellerName: ctx.seller?.displayName ?? null,
         notes: order.notes ?? null,
         ...(event === "order.cancelled" ? { cancelReason: order.cancelReason ?? null } : {}),
         externalId: order.deliveryRef?.externalId ?? null,
@@ -176,12 +192,13 @@ export async function createOrder(session: Session, input: z.output<typeof order
   const items: OrderItem[] = input.items.map((i, idx) => {
     const p = catalog.get(i.productId);
     if (!p || !p.active) throw new ApiError(422, "Hay productos inexistentes o desactivados", [{ path: ["items", idx], message: "Producto inválido" }]);
-    return { productId: p.id, name: p.name, qty: i.qty, unitPrice: round2(i.unitPrice ?? p.price) };
+    return { productId: p.id, name: p.name, ...(p.sku ? { sku: p.sku } : {}), qty: i.qty, unitPrice: round2(i.unitPrice ?? p.price) };
   });
   const total = orderTotal(items);
   const status: OrderStatus = input.confirm ? "confirmado" : "borrador";
   const sellerId = session.role === "vendedor" ? session.uid : (customer.ownerId ?? session.uid);
   const leadId = input.leadId ?? (await openLeadOf(session.orgId, customer.id));
+  const seller = input.confirm ? (await getMembers(session.orgId)).find((m) => m.id === sellerId) : undefined;
   const ref = col(session.orgId, "orders").doc();
   const counterRef = col(session.orgId, "settings").doc("counters");
   const now = Date.now();
@@ -229,7 +246,7 @@ export async function createOrder(session: Session, input: z.output<typeof order
       tx.update(effects.customerRef, { stats: applyOrderToStats(freshCustomer.stats, total, 1), lastPurchaseAt: now });
       effects.write({ to: "pedido_generado" }, now, { orderId: ref.id });
       oppEffect?.(now);
-      enqueueIn(tx, session, connectors, "order.confirmed", created, now);
+      enqueueIn(tx, session, connectors, "order.confirmed", created, now, { customer: freshCustomer, seller });
     }
   });
   if (input.confirm) await fireAutomations(session.orgId, "pedido_creado", { customerId: created.customerId, conversationId: created.conversationId, orderId: created.id });
@@ -255,7 +272,9 @@ export async function changeOrderStatus(
   const willCount = COUNTED_STATUSES.includes(input.status);
   const countDelta: 1 | -1 | 0 = willCount && !order.counted ? 1 : !willCount && order.counted ? -1 : 0;
   const leadTo = leadStatusForOrder(input.status);
-  const members = countDelta || input.status === "entregado" ? await getMembers(session.orgId) : [];
+  const notifies = input.status === "confirmado" || (input.status === "cancelado" && order.counted);
+  const members = countDelta || notifies || input.status === "entregado" ? await getMembers(session.orgId) : [];
+  const skus = notifies ? new Map((await getProducts(session.orgId)).map((p) => [p.id, p.sku])) : undefined;
 
   await adminDb().runTransaction(async (tx) => {
     const ref = col(session.orgId, "orders").doc(id);
@@ -293,7 +312,13 @@ export async function changeOrderStatus(
     }
     effects.write(leadTo ? { to: leadTo } : null, now, { orderId: id });
     oppEffect?.(now);
-    if (event) enqueueIn(tx, session, connectors, event, { ...order, status: input.status, cancelReason: input.reason ?? order.cancelReason }, now);
+    if (event) {
+      enqueueIn(tx, session, connectors, event, { ...order, status: input.status, cancelReason: input.reason ?? order.cancelReason }, now, {
+        customer: effects.customer,
+        seller: members.find((m: Member) => m.id === order.sellerId),
+        skus,
+      });
+    }
 
     // El vendedor se entera de la entrega.
     const seller = members.find((m: Member) => m.id === order.sellerId);

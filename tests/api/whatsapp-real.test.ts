@@ -298,7 +298,7 @@ describe("conector con el sistema de gestión (contra el simulador)", () => {
   });
 
   test("pedido confirmado → se encola → la tarea programada lo entrega firmado", async () => {
-    const product = (await call("admin", "POST", "/api/products", { name: "Pollo entero", unit: "kg", price: 3200 })).data.product.id;
+    const product = (await call("admin", "POST", "/api/products", { name: "Pollo entero", sku: `POL${Date.now() % 100000}`, unit: "kg", price: 3200 })).data.product.id;
     const customerId = (await call("admin", "GET", `/api/conversations/principal_5493516112233`)).data.conversation.customerId;
     const order = await call("admin", "POST", "/api/orders", { customerId, items: [{ productId: product, qty: 10 }], confirm: true });
     assert.equal(order.status, 200, JSON.stringify(order.data));
@@ -312,6 +312,10 @@ describe("conector con el sistema de gestión (contra el simulador)", () => {
     const body = JSON.parse(delivered.raw);
     assert.equal(body.data.orderId, orderId);
     assert.equal(body.data.total, 32000);
+    // Lo que necesita el sistema de gestión para reconocer el pedido (ver docs/CONECTOR-GESTION.md).
+    assert.match(body.data.items[0].sku, /^POL\d+$/, "el código del producto");
+    assert.equal(body.data.customerPhone, "5493516112233", "el teléfono del cliente");
+    assert.ok([USERS.admin, USERS.vendedor].includes(body.data.sellerEmail), "el email del vendedor");
     const view = (await call("admin", "GET", "/api/settings/integrations")).data;
     assert.equal(view.outbox.find((o: { number: string }) => o.number === order.data.order.number)?.status, "enviado");
   });
