@@ -20,7 +20,7 @@ export const DEFAULT_PIPELINE_STAGES: PipelineStage[] = [
 ];
 
 export const DEFAULT_TAGS: Pick<Tag, "id" | "name" | "color">[] = [
-  { id: "nuevo", name: "NUEVO", color: "#2a9781" },
+  { id: "nuevo", name: "NUEVO", color: "#4f46e5" },
   { id: "urgente", name: "URGENTE", color: "#dc2626" },
   { id: "mayorista", name: "MAYORISTA", color: "#7c3aed" },
   { id: "restaurante", name: "RESTAURANTE", color: "#ea580c" },

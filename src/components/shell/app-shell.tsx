@@ -104,8 +104,8 @@ export function AppShell({
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
                 compact ? "justify-center" : "",
                 active
-                  ? "bg-brand-700 text-white"
-                  : "text-brand-100 hover:bg-brand-800 hover:text-white",
+                  ? "bg-brand-600 text-white"
+                  : "text-panel-ink hover:bg-panel-hover hover:text-white",
               ].join(" ")}
             >
               <Icon className="size-5 shrink-0" aria-hidden />
@@ -141,7 +141,7 @@ export function AppShell({
       <div className="flex min-h-0 flex-1">
         {/* Sidebar tablet/escritorio */}
         <aside
-          className={`hidden shrink-0 flex-col bg-brand-950 md:flex ${collapsed ? "w-16" : "w-16 lg:w-60"}`}
+          className={`hidden shrink-0 flex-col bg-panel md:flex ${collapsed ? "w-16" : "w-16 lg:w-60"}`}
         >
           <div className="lg:hidden">{brand(true)}</div>
           <div className="hidden lg:block">{brand(collapsed)}</div>
@@ -152,7 +152,7 @@ export function AppShell({
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="m-2 hidden items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs text-brand-200 hover:bg-brand-800 hover:text-white lg:flex"
+            className="m-2 hidden items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs text-panel-ink hover:bg-panel-hover hover:text-white lg:flex"
             aria-label={collapsed ? "Expandir menú" : "Colapsar menú"}
           >
             {collapsed ? (
@@ -174,13 +174,13 @@ export function AppShell({
               aria-label="Cerrar menú"
               onClick={() => setDrawerOpen(false)}
             />
-            <aside className="relative flex h-full w-72 max-w-[85%] flex-col bg-brand-950">
+            <aside className="relative flex h-full w-72 max-w-[85%] flex-col bg-panel">
               <div className="flex items-center justify-between pr-2">
                 {brand(false)}
                 <button
                   type="button"
                   onClick={() => setDrawerOpen(false)}
-                  className="rounded-lg p-2 text-brand-100 hover:bg-brand-800"
+                  className="rounded-lg p-2 text-panel-ink hover:bg-panel-hover"
                   aria-label="Cerrar menú"
                 >
                   <X className="size-5" aria-hidden />

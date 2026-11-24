@@ -9,7 +9,7 @@ import { TagChip } from "@/components/ui/badges";
 
 type TagRow = { id: string; name: string; color: string };
 
-const PALETTE = ["#2a9781", "#16a34a", "#65a30d", "#ca8a04", "#ea580c", "#dc2626", "#db2777", "#7c3aed", "#2563eb", "#0891b2", "#475569"];
+const PALETTE = ["#4f46e5", "#16a34a", "#65a30d", "#ca8a04", "#ea580c", "#dc2626", "#db2777", "#7c3aed", "#2563eb", "#0891b2", "#475569"];
 
 function TagModal({ tag, onClose }: { tag?: TagRow; onClose: () => void }) {
   const router = useRouter();

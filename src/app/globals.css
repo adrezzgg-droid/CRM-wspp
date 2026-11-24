@@ -1,43 +1,50 @@
 @import "tailwindcss";
 
 /*
- * Identidad visual del CRM.
- * Marca: verde petróleo (confianza, cercano a la mensajería sin copiar a WhatsApp).
- * Neutros: slate. Acento de estado: ámbar para DEMO y alertas.
+ * Identidad visual del CRM: la misma paleta que Impulse360 (tema claro, ver
+ * TEMA_CLARO en panitas-app/src/panitas.jsx) para que los dos sistemas se
+ * sientan uno solo. Primario índigo (#4F46E5 = brand-600, hover #4338CA =
+ * brand-700), lienzo gris azulado, textos slate y panel lateral azul noche.
+ * Acento de estado: ámbar para DEMO y alertas.
  */
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  --color-brand-50: #effaf7;
-  --color-brand-100: #d7f2ea;
-  --color-brand-200: #b1e4d6;
-  --color-brand-300: #7fcfbb;
-  --color-brand-400: #4bb39c;
-  --color-brand-500: #2a9781;
-  --color-brand-600: #1d7a69;
-  --color-brand-700: #1a6256;
-  --color-brand-800: #194f46;
-  --color-brand-900: #17423b;
-  --color-brand-950: #082622;
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
+  --color-brand-950: #1e1b4b;
 
-  --color-canvas: #f5f7f8;
+  --color-canvas: #eef2f9;
   --color-surface: #ffffff;
-  --color-line: #e3e8eb;
-  --color-ink: #0f1d22;
-  --color-ink-muted: #5b6b73;
+  --color-line: #e2e8f0;
+  --color-ink: #0f172a;
+  --color-ink-muted: #64748b;
+
+  /* Panel oscuro (menú lateral y portada del login), como la barra de Impulse360. */
+  --color-panel: #0b0f19;
+  --color-panel-hover: #1c2235;
+  --color-panel-ink: #cbd5e1;
 
   /*
-   * Gráficos. Una sola serie: verde de marca (brand-500, validado contra el
-   * blanco). Varias categorías: orden fijo azul → naranja → aqua, validado
+   * Gráficos. Una sola serie: índigo de marca (brand-500, validado contra el
+   * blanco). Varias categorías: orden fijo índigo → naranja → aqua, validado
    * para daltonismo (scripts del skill de dataviz); el aqua queda por debajo
    * de 3:1, por eso esas partes siempre llevan su número visible.
    */
-  --color-series-1: #2a78d6;
+  --color-series-1: #4f46e5;
   --color-series-2: #eb6834;
   --color-series-3: #1baf7a;
-  --color-viz-grid: #e9edef;
-  --color-viz-axis: #c9d2d6;
+  --color-viz-grid: #e2e8f0;
+  --color-viz-axis: #cbd5e1;
   --color-delta-up: #006300;
   --color-delta-down: #c22f2f;
 }

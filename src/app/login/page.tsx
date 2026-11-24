@@ -18,9 +18,9 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
   return (
     <main className="grid min-h-full lg:grid-cols-2">
-      <section className="relative hidden overflow-hidden bg-brand-900 p-12 text-brand-50 lg:flex lg:flex-col lg:justify-between">
+      <section className="relative hidden overflow-hidden bg-panel p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="flex items-center gap-2 text-lg font-semibold">
-          <span className="grid size-9 place-items-center rounded-xl bg-brand-500 text-white">
+          <span className="grid size-9 place-items-center rounded-xl bg-brand-600 text-white">
             <MessageCircle className="size-5" aria-hidden />
           </span>
           {appName}
@@ -29,12 +29,12 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           <h1 className="text-4xl font-semibold leading-tight text-white">
             Cada conversación, un cliente. Cada cliente, una venta.
           </h1>
-          <p className="text-brand-200">
+          <p className="text-panel-ink">
             Centralizá los mensajes de WhatsApp, repartí los leads entre tu equipo y medí todo el
             proceso comercial en un solo lugar.
           </p>
         </div>
-        <p className="text-sm text-brand-300">Acceso solo para usuarios autorizados.</p>
+        <p className="text-sm text-slate-400">Acceso solo para usuarios autorizados.</p>
         <div
           aria-hidden
           className="pointer-events-none absolute -right-24 -bottom-24 size-96 rounded-full bg-brand-700/60 blur-3xl"
