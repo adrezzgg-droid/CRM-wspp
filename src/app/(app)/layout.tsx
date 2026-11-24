@@ -1,18 +1,16 @@
-import { cookies } from "next/headers";
 import { requireSession } from "@/server/auth/guards";
 import { ROLE_LABELS } from "@/server/permissions/matrix";
-import { mainNavFor, SIDEBAR_COOKIE } from "@/lib/navigation";
+import { navGroupsFor } from "@/lib/navigation";
 import { OWNER_ROLES } from "@/server/org/data";
 import { AppShell } from "@/components/shell/app-shell";
 import { FirebaseSessionProvider } from "@/components/providers/firebase-session";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
-  const collapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === "1";
   return (
     <FirebaseSessionProvider uid={session.uid} orgId={session.orgId}>
       <AppShell
-        nav={mainNavFor(session.role, session.overrides)}
+        groups={navGroupsFor(session.role, session.overrides)}
         user={{
           displayName: session.member.displayName,
           email: session.email,
@@ -20,7 +18,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           available: OWNER_ROLES.has(session.role) ? session.member.available : undefined,
         }}
         org={{ name: session.org.name, isDemo: session.org.isDemo }}
-        initialCollapsed={collapsed}
       >
         {children}
       </AppShell>

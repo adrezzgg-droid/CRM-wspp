@@ -100,7 +100,7 @@ export function ProductsManager({ products, currency, canCreate, canEdit }: { pr
       {products.length === 0 ? (
         <p className="rounded-xl border border-dashed border-line bg-surface px-6 py-10 text-center text-sm text-ink-muted">No hay productos con esos filtros.</p>
       ) : (
-        <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+        <ul className="divide-y divide-line overflow-hidden glass-card rounded-xl">
           {products.map((p) => (
             <li key={p.id} className="flex items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">

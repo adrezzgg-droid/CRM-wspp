@@ -42,8 +42,8 @@ export function Field({
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-brand-600 text-white hover:bg-brand-700",
-  secondary: "border border-line bg-surface text-ink hover:bg-canvas",
+  primary: "btn-primario",
+  secondary: "border border-slate-300 bg-white/70 text-slate-600 hover:border-brand-600 hover:text-brand-600",
   danger: "bg-red-600 text-white hover:bg-red-700",
   ghost: "text-ink-muted hover:bg-canvas hover:text-ink",
 };
@@ -61,7 +61,7 @@ export function Button({
       type="button"
       {...rest}
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${VARIANTS[variant]} ${className}`}
     >
       {loading && <Loader2 className="size-4 animate-spin" aria-hidden />}
       {children}
@@ -72,7 +72,7 @@ export function Button({
 export function Alert({ tone = "error", children }: { tone?: "error" | "info" | "success"; children: React.ReactNode }) {
   const tones = {
     error: "bg-red-50 text-red-700",
-    info: "bg-brand-50 text-brand-800",
+    info: "bg-brand-100/70 text-brand-800",
     success: "bg-green-50 text-green-800",
   };
   const ref = useRef<HTMLDivElement>(null);
@@ -129,16 +129,16 @@ export function Modal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
-      <button type="button" aria-label="Cerrar" className="absolute inset-0 bg-black/40" onClick={onClose} tabIndex={-1} />
+      <button type="button" aria-label="Cerrar" className="absolute inset-0 bg-[rgba(27,22,17,0.55)] backdrop-blur-[5px]" onClick={onClose} tabIndex={-1} />
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`relative flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-surface shadow-xl sm:rounded-2xl ${size === "lg" ? "sm:max-w-3xl" : "sm:max-w-lg"}`}
+        className={`fade-in relative flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-surface shadow-[0_20px_50px_-12px_rgba(0,0,0,0.35),0_8px_16px_-8px_rgba(0,0,0,0.2)] sm:rounded-xl ${size === "lg" ? "sm:max-w-3xl" : "sm:max-w-lg"}`}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <h2 id={titleId} className="text-base font-semibold">
+          <h2 id={titleId} className="text-lg font-bold tracking-[0.02em]">
             {title}
           </h2>
           <button type="button" data-close onClick={onClose} className="rounded-lg p-1.5 text-ink-muted hover:bg-canvas" aria-label="Cerrar">

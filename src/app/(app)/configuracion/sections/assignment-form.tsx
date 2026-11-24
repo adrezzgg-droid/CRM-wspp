@@ -73,7 +73,7 @@ export function AssignmentForm({
   }
 
   return (
-    <form onSubmit={save} className="space-y-5 rounded-xl border border-line bg-surface p-4" noValidate>
+    <form onSubmit={save} className="space-y-5 glass-card rounded-xl p-4" noValidate>
       <fieldset className="space-y-3">
         <legend className="mb-1 text-sm font-semibold">Conversaciones nuevas</legend>
         <p className="text-xs text-ink-muted">

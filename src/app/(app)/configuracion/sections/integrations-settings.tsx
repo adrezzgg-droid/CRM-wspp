@@ -67,7 +67,7 @@ export function IntegrationsSettings({ initial }: { initial: IntegrationsView })
       {!view.encryptionReady && <Alert>El servidor no tiene SECRETS_ENCRYPTION_KEY: no se puede guardar el secreto del conector.</Alert>}
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
 
-      <section className="space-y-4 rounded-xl border border-line bg-surface p-4">
+      <section className="space-y-4 glass-card rounded-xl p-4">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="mr-auto text-sm font-semibold">Sistema de gestión de la distribuidora</h3>
           <Badge tone={g.enabled ? "brand" : "neutral"}>{g.enabled ? "Activo" : "Apagado"}</Badge>
@@ -124,7 +124,7 @@ export function IntegrationsSettings({ initial }: { initial: IntegrationsView })
         </form>
       </section>
 
-      <section className="space-y-4 rounded-xl border border-line bg-surface p-4">
+      <section className="space-y-4 glass-card rounded-xl p-4">
         <h3 className="text-sm font-semibold">Datos para configurar en el sistema de gestión</h3>
         {g.secret ? (
           <CopyField label="Secreto compartido" value={g.secret} hint="Con este secreto el sistema de gestión verifica que los pedidos vienen del CRM y firma lo que nos devuelve (HMAC-SHA256)." />
@@ -139,7 +139,7 @@ export function IntegrationsSettings({ initial }: { initial: IntegrationsView })
         )}
       </section>
 
-      <section className="rounded-xl border border-line bg-surface">
+      <section className="glass-card rounded-xl">
         <h3 className="border-b border-line px-4 py-3 text-sm font-semibold">Últimos envíos</h3>
         {view.outbox.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-ink-muted">Todavía no se envió nada.</p>

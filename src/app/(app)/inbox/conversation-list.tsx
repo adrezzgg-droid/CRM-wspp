@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { avatarStyle } from "@/components/ui/styles";
 import { AlertTriangle, Search, Timer } from "lucide-react";
 import type { Conversation } from "@/types/model";
 import { CONVERSATION_STATUS_LABELS } from "@/types/model";
@@ -109,7 +110,7 @@ export function ConversationList({
                     aria-current={active ? "true" : undefined}
                     className={`flex w-full gap-3 px-3 py-3 text-left transition ${active ? "bg-brand-50" : "hover:bg-canvas"}`}
                   >
-                    <span className="relative grid size-10 shrink-0 place-items-center rounded-full bg-brand-100 text-sm font-semibold text-brand-800" aria-hidden>
+                    <span style={avatarStyle(c.contactName)} className="relative grid size-10 shrink-0 place-items-center rounded-full text-sm font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]" aria-hidden>
                       {initials(c.contactName)}
                       <span className={`absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-surface ${STATUS_DOT[c.status]}`} />
                     </span>

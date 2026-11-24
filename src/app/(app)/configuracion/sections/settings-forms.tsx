@@ -40,7 +40,7 @@ export function OrganizationForm({ initial, readOnly }: { initial: { name: strin
         e.preventDefault();
         run(() => api("PATCH", "/api/settings/organization", v));
       }}
-      className="space-y-4 rounded-xl border border-line bg-surface p-4"
+      className="space-y-4 glass-card rounded-xl p-4"
       noValidate
     >
       <Field label="Nombre de la empresa" error={fe.name}>
@@ -94,7 +94,7 @@ export function GeneralForm({
         e.preventDefault();
         run(() => api("PUT", "/api/settings/general", { defaultCountryCode: country, businessHours: hoursOn ? hours : null }));
       }}
-      className="space-y-5 rounded-xl border border-line bg-surface p-4"
+      className="space-y-5 glass-card rounded-xl p-4"
       noValidate
     >
       <Field label="Código de país por defecto" error={fe.defaultCountryCode} hint="Para interpretar teléfonos cargados sin prefijo. Argentina = 54." className="max-w-xs">

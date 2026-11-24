@@ -40,7 +40,7 @@ export function NotificationPrefsForm({ types, initial }: { types: NotificationT
   }
 
   return (
-    <div className="space-y-4 rounded-xl border border-line bg-surface p-4">
+    <div className="space-y-4 glass-card rounded-xl p-4">
       <p className="text-sm text-ink-muted">Elegí qué avisos querés recibir en la campana. Es una preferencia personal: no cambia la de nadie más.</p>
       <ul className="divide-y divide-line">
         {types.map((t) => (

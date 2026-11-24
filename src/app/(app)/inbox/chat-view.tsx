@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { avatarStyle } from "@/components/ui/styles";
 import { collection, limitToLast, onSnapshot, orderBy, query } from "firebase/firestore";
 import { ArrowLeft, Info, Paperclip, Send, StickyNote, X } from "lucide-react";
 import type { Conversation, Message } from "@/types/model";
@@ -73,7 +74,7 @@ export function ChatView({
         <button type="button" onClick={onBack} className="rounded-lg p-2 text-ink-muted hover:bg-canvas md:hidden" aria-label="Volver a la lista">
           <ArrowLeft className="size-5" aria-hidden />
         </button>
-        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-100 text-sm font-semibold text-brand-800" aria-hidden>
+        <span className="grid size-9 shrink-0 place-items-center rounded-full text-sm font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]" style={avatarStyle(c.contactName)} aria-hidden>
           {initials(c.contactName)}
         </span>
         <div className="min-w-0 flex-1">
@@ -248,7 +249,7 @@ function Composer({
           }}
           disabled={blocked}
           placeholder={note ? "Nota interna para el equipo…" : blocked ? "Fuera de la ventana de 24 h" : "Escribí un mensaje (Enter envía, Shift+Enter salto de línea)"}
-          className="max-h-40 min-h-10 flex-1 resize-none rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:bg-canvas"
+          className="max-h-40 min-h-10 flex-1 resize-none glass-card rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:bg-canvas"
           style={{ fieldSizing: "content" } as React.CSSProperties}
         />
         <button

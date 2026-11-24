@@ -8,7 +8,7 @@
  * Acento de estado: ámbar para DEMO y alertas.
  */
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-nunito), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
   --color-brand-50: #eef2ff;
@@ -54,10 +54,93 @@ body {
   height: 100%;
 }
 
+/* Lienzo de Impulse360: gris azulado con brillos índigo, cian y rosa (fijos al desplazarse). */
 body {
-  background: var(--color-canvas);
+  background-color: var(--color-canvas);
+  background-image:
+    radial-gradient(1100px 640px at 88% -10%, rgba(99, 102, 241, 0.3), transparent 60%),
+    radial-gradient(900px 620px at -10% 12%, rgba(6, 182, 212, 0.22), transparent 58%),
+    radial-gradient(1000px 700px at 50% 118%, rgba(236, 72, 153, 0.14), transparent 60%);
+  background-attachment: fixed;
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Componentes de Impulse360 (en su capa: las utilidades de Tailwind pueden ajustarlos). */
+@layer components {
+  /* Tarjetas "vidrio esmerilado" (mismas que Impulse360): dejan ver el degradado de fondo. */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.38);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 8px 32px -8px rgba(31, 74, 71, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+  }
+  a.glass-card:hover,
+  button.glass-card:hover {
+    box-shadow: 0 10px 36px -8px rgba(31, 74, 71, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+  /* Siempre sobre fondo oscuro (barra superior, login). */
+  .glass-card-dark {
+    background: rgba(30, 41, 59, 0.35);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  /* Vidrio más opaco para menús con mucho texto. */
+  .glass-card-menu {
+    background: rgba(255, 255, 255, 0.88);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  }
+
+  /* Botón principal: degradado índigo con brillo cian. */
+  .btn-primario {
+    color: #fff;
+    font-weight: 700;
+    background-image: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.3), 0 4px 14px rgba(6, 182, 212, 0.28);
+  }
+  .btn-primario:hover:not(:disabled) {
+    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.6), 0 6px 22px rgba(6, 182, 212, 0.45);
+  }
+}
+
+/* Comportamiento global (como Impulse360). */
+@layer base {
+  /* Micro-interacciones (como Impulse360): sensación táctil al tocar botones. */
+  button:not(:disabled) {
+    transition: transform 0.1s ease, opacity 0.1s ease, box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  }
+  button:not(:disabled):active {
+    transform: scale(0.96);
+  }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .fade-in {
+    animation: fadeInUp 0.18s ease;
+  }
+
+  /* Tablas: encabezado gris claro y fila resaltada al pasar el mouse. */
+  table thead tr {
+    letter-spacing: 0.02em;
+  }
+  tbody tr:hover {
+    background-color: rgba(99, 102, 241, 0.05);
+  }
+
+  /* Barras de desplazamiento finas. */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::placeholder { color: #94a3b8; }
 }
 
 :focus-visible {

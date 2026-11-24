@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Mi día" };
 
 function Block({ title, icon: Icon, count, href, children }: { title: string; icon: typeof Inbox; count?: number; href?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-line bg-surface">
+    <section className="glass-card rounded-xl">
       <header className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Icon className="size-4 text-brand-600" aria-hidden /> {title}
@@ -76,7 +76,7 @@ export default async function MyDayPage() {
       {kpis.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {kpis.map((k) => (
-            <Link key={k.label} href={k.href} className="rounded-xl border border-line bg-surface px-4 py-3 hover:border-brand-300">
+            <Link key={k.label} href={k.href} className="glass-card rounded-xl px-4 py-3 hover:border-brand-300">
               <p className="text-xs text-ink-muted">{k.label}</p>
               <p className={`mt-1 text-2xl font-semibold ${tones[k.tone]}`}>{k.value}</p>
             </Link>

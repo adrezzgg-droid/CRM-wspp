@@ -232,7 +232,7 @@ export function UsersManager(props: Props) {
         )}
       </div>
       {error && <Alert>{error}</Alert>}
-      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+      <ul className="divide-y divide-line overflow-hidden glass-card rounded-xl">
         {sorted.map((m) => (
           <li key={m.id} className={`flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center ${m.active ? "" : "bg-canvas/60"}`}>
             <div className="min-w-0 flex-1">

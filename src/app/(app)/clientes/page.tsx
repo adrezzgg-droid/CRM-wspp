@@ -67,7 +67,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/client
         actions={canCreate && !filters.archivados ? <NewCustomerButton options={options} defaultOwner={options.owners.some((o) => o.id === session.uid) ? session.uid : ""} /> : undefined}
       />
 
-      <form method="get" className="grid gap-2 rounded-xl border border-line bg-surface p-3 sm:grid-cols-2 lg:grid-cols-4">
+      <form method="get" className="grid gap-2 glass-card rounded-xl p-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="relative sm:col-span-2">
           <span className="sr-only">Buscar</span>
           <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-ink-muted" aria-hidden />
@@ -149,7 +149,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/client
       ) : (
         <>
           {/* Tabla en tablet/escritorio */}
-          <div className="hidden overflow-hidden rounded-xl border border-line bg-surface md:block">
+          <div className="hidden overflow-hidden glass-card rounded-xl md:block">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-line bg-canvas text-xs text-ink-muted uppercase">
                 <tr>
@@ -202,7 +202,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/client
           <ul className="space-y-2 md:hidden">
             {page.items.map((c) => (
               <li key={c.id}>
-                <Link href={`/clientes/${c.id}`} className="flex items-center gap-3 rounded-xl border border-line bg-surface p-3 active:bg-canvas">
+                <Link href={`/clientes/${c.id}`} className="flex items-center gap-3 glass-card rounded-xl p-3 active:bg-canvas">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{c.name}</p>
                     <p className="truncate text-xs text-ink-muted">

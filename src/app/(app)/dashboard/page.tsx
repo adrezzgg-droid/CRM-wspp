@@ -96,7 +96,7 @@ function Content({ d, query, seesCustomers, seesInbox }: { d: DashboardData; que
     <div className="space-y-6">
       {/* Ventas */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <section className="relative rounded-xl border border-line bg-surface p-4 sm:p-5 lg:col-span-2">
+        <section className="relative glass-card rounded-xl p-4 sm:p-5 lg:col-span-2">
           <HeroStat
             label="Monto vendido"
             value={fmtMoney(k.revenue.value)}

@@ -218,7 +218,7 @@ export function TemplatesManager({ templates, canEdit, isDemo }: { templates: Ro
       ) : (
         <ul className="space-y-2">
           {templates.map((t) => (
-            <li key={t.id} className="rounded-xl border border-line bg-surface p-4">
+            <li key={t.id} className="glass-card rounded-xl p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2 font-mono text-sm font-medium">

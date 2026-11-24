@@ -94,7 +94,7 @@ export function RolesEditor({ overrides, readOnly }: { overrides: PolicyOverride
 
       {role === "admin" && <Alert tone="info">El administrador siempre tiene todos los permisos: no se puede restringir, así la empresa nunca se queda sin alguien que corrija la configuración.</Alert>}
 
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+      <div className="overflow-x-auto glass-card rounded-xl">
         <table className="w-full min-w-[640px] text-sm">
           <thead className="border-b border-line bg-canvas text-xs text-ink-muted">
             <tr>

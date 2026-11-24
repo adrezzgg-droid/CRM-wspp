@@ -12,7 +12,7 @@ export function PageHeader({
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold sm:text-2xl">{title}</h1>
+        <h1 className="text-2xl font-bold tracking-[0.01em]">{title}</h1>
         {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 gap-2">{actions}</div>}
@@ -30,7 +30,7 @@ export function PageBody({ children }: { children: React.ReactNode }) {
  */
 export function ModulePending({ phase, items }: { phase: number; items: string[] }) {
   return (
-    <section className="rounded-xl border border-dashed border-line bg-surface p-6 sm:p-8">
+    <section className="glass-card rounded-xl p-6 sm:p-8">
       <div className="flex items-start gap-4">
         <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-amber-100 text-amber-700">
           <Construction className="size-5" aria-hidden />

@@ -54,7 +54,7 @@ export default async function OrderPage({ params }: PageProps<"/pedidos/[id]">) 
         <ArrowLeft className="size-4" aria-hidden /> Pedidos
       </Link>
 
-      <header className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
+      <header className="space-y-4 glass-card rounded-xl p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="font-mono text-sm text-ink-muted">{order.number}</p>
@@ -100,7 +100,7 @@ export default async function OrderPage({ params }: PageProps<"/pedidos/[id]">) 
       </header>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <section className="overflow-hidden rounded-xl border border-line bg-surface lg:col-span-2">
+        <section className="overflow-hidden glass-card rounded-xl lg:col-span-2">
           <h2 className="border-b border-line px-4 py-3 text-sm font-semibold">Productos</h2>
           <table className="w-full text-sm">
             <thead className="bg-canvas text-xs text-ink-muted">
@@ -136,7 +136,7 @@ export default async function OrderPage({ params }: PageProps<"/pedidos/[id]">) 
         </section>
 
         <div className="space-y-6">
-          <section className="rounded-xl border border-line bg-surface p-4 text-sm">
+          <section className="glass-card rounded-xl p-4 text-sm">
             <h2 className="mb-2 font-semibold">Entrega</h2>
             <dl className="space-y-1.5">
               <div>
@@ -163,7 +163,7 @@ export default async function OrderPage({ params }: PageProps<"/pedidos/[id]">) 
             </dl>
           </section>
 
-          <section className="rounded-xl border border-line bg-surface p-4">
+          <section className="glass-card rounded-xl p-4">
             <h2 className="mb-3 text-sm font-semibold">Historial</h2>
             <ActivityTimeline items={activities} lookups={{ members: names, tags: new Map(), zones: new Map() }} timezone={tz} />
           </section>

@@ -101,7 +101,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/pedidos">
           <p className="mt-3 font-medium">{hasFilters ? "No hay pedidos con esos filtros." : isDriver ? "No tenés entregas asignadas." : "Todavía no hay pedidos."}</p>
         </div>
       ) : (
-        <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+        <ul className="divide-y divide-line overflow-hidden glass-card rounded-xl">
           {page.items.map((o) => (
             <li key={o.id}>
               <Link href={`/pedidos/${o.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-canvas">

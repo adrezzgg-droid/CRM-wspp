@@ -82,13 +82,13 @@ export function StatTile({
   now?: boolean;
 }) {
   return (
-    <div className="relative rounded-xl border border-line bg-surface p-4">
+    <div className="relative glass-card rounded-xl p-4">
       <div className="flex items-center gap-1.5">
-        <p className="text-sm text-ink-muted">{label}</p>
+        <p className="text-xs font-bold tracking-wide text-ink-muted uppercase">{label}</p>
         <InfoTip text={help} />
         {now && <span className="ml-auto rounded-full bg-canvas px-2 py-0.5 text-[11px] font-medium text-ink-muted">Ahora</span>}
       </div>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
+      <p className="mt-1 text-2xl font-bold">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-ink-muted">{sub}</p>}
       {k && <Delta k={k} compare={compare} />}
       {href && (
@@ -105,10 +105,10 @@ export function HeroStat({ label, value, k, help, sub }: { label: string; value:
   return (
     <div className="relative">
       <div className="flex items-center gap-1.5">
-        <p className="text-sm font-medium text-ink-muted">{label}</p>
+        <p className="text-xs font-bold tracking-wide text-ink-muted uppercase">{label}</p>
         <InfoTip text={help} />
       </div>
-      <p className="mt-1 text-4xl font-semibold tracking-tight break-words sm:text-5xl">{value}</p>
+      <p className="mt-1 text-4xl font-extrabold tracking-tight break-words sm:text-5xl">{value}</p>
       {sub && <p className="mt-1 text-sm text-ink-muted">{sub}</p>}
       <Delta k={k} compare={{ mode: "relativo", better: "up" }} />
     </div>
@@ -117,9 +117,9 @@ export function HeroStat({ label, value, k, help, sub }: { label: string; value:
 
 export function Card({ title, help, action, children, className = "" }: { title: string; help?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <section className={`relative rounded-xl border border-line bg-surface ${className}`}>
+    <section className={`relative glass-card rounded-xl ${className}`}>
       <header className="flex items-center gap-1.5 border-b border-line px-4 py-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="text-base font-bold">{title}</h2>
         {help && <InfoTip text={help} />}
         {action && <div className="ml-auto">{action}</div>}
       </header>

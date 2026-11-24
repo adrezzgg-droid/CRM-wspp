@@ -7,6 +7,7 @@ import { LogOut } from "lucide-react";
 import { api, errorMessage } from "@/lib/api-client";
 import { firebaseClient } from "@/lib/firebase/client";
 import type { ShellUser } from "./app-shell";
+import { avatarStyle } from "@/components/ui/styles";
 
 function initials(name: string): string {
   return name
@@ -64,26 +65,26 @@ export function UserMenu({ user }: { user: ShellUser }) {
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2 rounded-lg p-1 pr-2 hover:bg-canvas"
+        className="flex items-center gap-2 rounded-lg p-1 pr-2 text-[#F0EEE6] hover:bg-white/10"
       >
-        <span className="relative grid size-8 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-800">
+        <span className="relative grid size-8 place-items-center rounded-full text-xs font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]" style={avatarStyle(user.displayName)}>
           {initials(user.displayName) || "?"}
           {user.available !== undefined && (
             <span
-              className={`absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-surface ${user.available ? "bg-green-500" : "bg-slate-400"}`}
+              className={`absolute -right-0.5 -bottom-0.5 size-3 rounded-full border-2 border-panel ${user.available ? "bg-green-500" : "bg-slate-400"}`}
               title={user.available ? "Disponible" : "No disponible"}
             />
           )}
         </span>
         <span className="hidden text-left sm:block">
           <span className="block max-w-40 truncate text-sm font-medium">{user.displayName}</span>
-          <span className="block text-xs text-ink-muted">{user.roleLabel}</span>
+          <span className="block text-xs text-slate-400">{user.roleLabel}</span>
         </span>
       </button>
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-line bg-surface shadow-lg"
+          className="absolute right-0 z-30 mt-2 w-64 overflow-hidden glass-card-menu rounded-xl"
         >
           <div className="border-b border-line px-4 py-3">
             <p className="truncate text-sm font-medium">{user.displayName}</p>

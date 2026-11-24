@@ -125,7 +125,7 @@ export function TeamsManager({ teams, people, names, canEdit, canDelete }: { tea
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {teams.map((t) => (
-            <li key={t.id} className="rounded-xl border border-line bg-surface p-4">
+            <li key={t.id} className="glass-card rounded-xl p-4">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-medium">{t.name}</h3>
                 <div className="flex shrink-0">

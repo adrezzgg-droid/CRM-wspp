@@ -1,43 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Boxes,
-  ChartColumn,
-  FlaskConical,
-  Inbox,
-  Menu,
-  MessageCircle,
-  Package,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings,
-  ShieldCheck,
-  SquareCheckBig,
-  SquareKanban,
-  Sun,
-  Users,
-  X,
-  type LucideIcon,
-} from "lucide-react";
-import { SIDEBAR_COOKIE, type NavIcon, type NavItem } from "@/lib/navigation";
+import { ArrowLeft, ChevronRight, FlaskConical, LayoutGrid } from "lucide-react";
+import type { NavGroup, NavItem } from "@/lib/navigation";
+import { NAV_ICONS } from "./nav-icons";
 import { NotificationBell } from "./notification-bell";
 import { UserMenu } from "./user-menu";
 
-const ICONS: Record<NavIcon, LucideIcon> = {
-  sun: Sun,
-  chart: ChartColumn,
-  inbox: Inbox,
-  users: Users,
-  kanban: SquareKanban,
-  package: Package,
-  boxes: Boxes,
-  check: SquareCheckBig,
-  shield: ShieldCheck,
-  settings: Settings,
-};
 
 export interface ShellUser {
   displayName: string;
@@ -52,166 +23,129 @@ export interface ShellOrg {
   isDemo: boolean;
 }
 
-const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "CRM WhatsApp";
-
 /**
- * Estructura de la app:
- *  - escritorio (lg+): sidebar completa, se puede colapsar a íconos
- *  - tablet (md):      sidebar de íconos
- *  - móvil:            sidebar como cajón con botón de menú
+ * Estructura de la app, igual que Impulse360: una barra fija arriba (marca que
+ * vuelve al panel, sección actual, "Volver al panel", atajo "Ir a…",
+ * notificaciones y usuario) y debajo la pantalla. El inicio es el panel de
+ * categorías (app/(app)/page.tsx); no hay menú lateral.
  */
-
-
 export function AppShell({
-  nav,
+  groups,
   user,
   org,
-  initialCollapsed,
   children,
 }: {
-  nav: NavItem[];
+  groups: (NavGroup & { items: NavItem[] })[];
   user: ShellUser;
   org: ShellOrg;
-  /** Preferencia guardada en cookie: el servidor la lee y no hay parpadeo al cargar. */
-  initialCollapsed: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(initialCollapsed);
+  // El menú "Ir a…" queda abierto solo en la página donde se abrió: al navegar se cierra solo.
+  const [openAt, setOpenAt] = useState<string | null>(null);
+  const open = openAt === pathname;
+  const setOpen = (v: boolean) => setOpenAt(v ? pathname : null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const items = groups.flatMap((g) => g.items);
+  const current = items.find((i) => pathname === i.href || pathname.startsWith(`${i.href}/`));
+  const atHome = pathname === "/";
 
-  function toggleCollapsed() {
-    const next = !collapsed;
-    setCollapsed(next);
-    document.cookie = `${SIDEBAR_COOKIE}=${next ? "1" : "0"}; path=/; max-age=31536000; samesite=lax`;
-  }
-
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
-
-  const navList = (compact: boolean, onNavigate?: () => void) => (
-    <ul className="space-y-1">
-      {nav.map((item) => {
-        const Icon = ICONS[item.icon];
-        const active = isActive(item.href);
-        return (
-          <li key={item.href}>
-            <Link
-              href={item.href}
-              title={compact ? item.label : undefined}
-              aria-current={active ? "page" : undefined}
-              onClick={onNavigate}
-              className={[
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
-                compact ? "justify-center" : "",
-                active
-                  ? "bg-brand-600 text-white"
-                  : "text-panel-ink hover:bg-panel-hover hover:text-white",
-              ].join(" ")}
-            >
-              <Icon className="size-5 shrink-0" aria-hidden />
-              <span className={compact ? "sr-only" : ""}>{item.label}</span>
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
-  );
-
-  const brand = (compact: boolean) => (
-    <div className={`flex h-14 items-center gap-2 px-4 ${compact ? "justify-center px-0" : ""}`}>
-      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-500 text-white">
-        <MessageCircle className="size-4" aria-hidden />
-      </span>
-      {!compact && <span className="truncate font-semibold text-white">{appName}</span>}
-    </div>
-  );
+  // También se cierra al tocar afuera o con Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => !menuRef.current?.contains(e.target as Node) && setOpenAt(null);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpenAt(null);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   return (
     <div className="flex h-full flex-col">
       {org.isDemo && (
-        <div
-          role="status"
-          className="flex items-center justify-center gap-2 bg-amber-400 px-4 py-1.5 text-center text-xs font-semibold text-amber-950 sm:text-sm"
-        >
+        <div role="status" className="flex items-center justify-center gap-2 bg-amber-400 px-4 py-1.5 text-center text-xs font-bold text-amber-950 sm:text-sm">
           <FlaskConical className="size-4 shrink-0" aria-hidden />
           MODO DEMO · Datos de prueba de “{org.name}”. No se envían mensajes reales por WhatsApp.
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
-        {/* Sidebar tablet/escritorio */}
-        <aside
-          className={`hidden shrink-0 flex-col bg-panel md:flex ${collapsed ? "w-16" : "w-16 lg:w-60"}`}
-        >
-          <div className="lg:hidden">{brand(true)}</div>
-          <div className="hidden lg:block">{brand(collapsed)}</div>
-          <nav aria-label="Principal" className="flex-1 overflow-y-auto px-2 py-3">
-            <div className="lg:hidden">{navList(true)}</div>
-            <div className="hidden lg:block">{navList(collapsed)}</div>
-          </nav>
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            className="m-2 hidden items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs text-panel-ink hover:bg-panel-hover hover:text-white lg:flex"
-            aria-label={collapsed ? "Expandir menú" : "Colapsar menú"}
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="size-4" aria-hidden />
-            ) : (
-              <>
-                <PanelLeftClose className="size-4" aria-hidden /> Colapsar
-              </>
-            )}
-          </button>
-        </aside>
+      <header className="glass-card-dark relative z-40 flex min-h-14 shrink-0 items-center gap-2 rounded-none border-x-0 border-t-0 !bg-[rgba(11,15,25,0.92)] px-3 py-2 text-[#F0EEE6] md:gap-3 md:px-6">
+        <Link href="/" className="flex min-w-0 shrink-0 items-center gap-2" title="Ir al panel">
+          <span className="grid size-8 shrink-0 place-items-center rounded bg-gradient-to-br from-brand-600 to-brand-700 text-sm font-black text-white">
+            {org.name.charAt(0).toUpperCase()}
+          </span>
+          <span className="hidden truncate text-[15px] font-bold tracking-[0.03em] uppercase sm:block">{org.name}</span>
+        </Link>
 
-        {/* Cajón móvil */}
-        {drawerOpen && (
-          <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Menú">
+        {!atHome && current && (
+          <>
+            <ChevronRight className="size-3.5 shrink-0 text-[#8890AC]" aria-hidden />
+            <span className="min-w-0 truncate text-sm font-semibold">{current.label}</span>
+          </>
+        )}
+
+        <div className="flex-1" />
+
+        {!atHome && (
+          <Link
+            href={current ? `/?categoria=${current.group}` : "/"}
+            title="Volver al panel"
+            aria-label="Volver al panel"
+            className="grid shrink-0 place-items-center rounded-lg bg-white/10 p-2.5 hover:bg-white/20"
+          >
+            <ArrowLeft className="size-4" aria-hidden />
+          </Link>
+        )}
+
+        {items.length > 1 && (
+          <div className="shrink-0" ref={menuRef}>
             <button
               type="button"
-              className="absolute inset-0 bg-black/40"
-              aria-label="Cerrar menú"
-              onClick={() => setDrawerOpen(false)}
-            />
-            <aside className="relative flex h-full w-72 max-w-[85%] flex-col bg-panel">
-              <div className="flex items-center justify-between pr-2">
-                {brand(false)}
-                <button
-                  type="button"
-                  onClick={() => setDrawerOpen(false)}
-                  className="rounded-lg p-2 text-panel-ink hover:bg-panel-hover"
-                  aria-label="Cerrar menú"
-                >
-                  <X className="size-5" aria-hidden />
-                </button>
-              </div>
-              <nav aria-label="Principal" className="flex-1 overflow-y-auto px-2 py-3">
-                {navList(false, () => setDrawerOpen(false))}
+              onClick={() => setOpen(!open)}
+              aria-expanded={open}
+              aria-haspopup="menu"
+              title="Ir a…"
+              aria-label="Ir a…"
+              className="grid place-items-center rounded-lg bg-white/10 p-2.5 hover:bg-white/20"
+            >
+              <LayoutGrid className="size-4" aria-hidden />
+            </button>
+            {open && (
+              // Anclado a la barra (no al botón): en el celular nunca se corta por la izquierda.
+              <nav aria-label="Ir a" className="glass-card-menu fade-in absolute top-full right-2 z-50 mt-2 max-h-[70vh] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl py-2 text-ink">
+                {groups.map((g) => (
+                  <div key={g.id}>
+                    <p className="px-4 pt-2 pb-1 text-[10px] font-bold tracking-wider text-ink-muted uppercase">{g.label}</p>
+                    {g.items.map((item) => {
+                      const Icon = NAV_ICONS[item.icon];
+                      const active = item === current;
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          aria-current={active ? "page" : undefined}
+                          className={`flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-brand-600/10 ${active ? "font-bold text-brand-600" : "font-medium"}`}
+                        >
+                          <Icon className="size-4 shrink-0 text-brand-600" aria-hidden />
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ))}
               </nav>
-            </aside>
+            )}
           </div>
         )}
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3 sm:px-4">
-            <button
-              type="button"
-              onClick={() => setDrawerOpen(true)}
-              className="rounded-lg p-2 text-ink-muted hover:bg-canvas md:hidden"
-              aria-label="Abrir menú"
-            >
-              <Menu className="size-5" aria-hidden />
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{org.name}</p>
-            </div>
-            <NotificationBell />
-            <UserMenu user={user} />
-          </header>
-          <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
-        </div>
-      </div>
+        <NotificationBell />
+        <UserMenu user={user} />
+      </header>
+
+      <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
     </div>
   );
 }

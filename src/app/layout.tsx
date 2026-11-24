@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Nunito } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+// Misma tipografía que Impulse360 (Nunito). next/font la sirve desde el propio sitio (sin Google en el navegador).
+const nunito = Nunito({ variable: "--font-nunito", subsets: ["latin"], weight: ["400", "500", "600", "700", "800", "900"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "CRM WhatsApp";
@@ -23,7 +24,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   // a sus scripts. Las páginas ya dependían de la sesión, así que no cambia el costo.
   await connection();
   return (
-    <html lang="es-AR" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
+    <html lang="es-AR" className={`${nunito.variable} ${geistMono.variable} h-full`}>
       <body className="h-full font-sans">{children}</body>
     </html>
   );

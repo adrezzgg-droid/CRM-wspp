@@ -88,9 +88,9 @@ export function NotificationBell() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={label}
-        className="relative inline-flex rounded-lg p-2 text-ink-muted hover:bg-canvas"
+        className="relative inline-flex rounded-lg bg-white/10 p-2.5 text-[#F0EEE6] hover:bg-white/20"
       >
-        <Bell className="size-5" aria-hidden />
+        <Bell className="size-4" aria-hidden />
         {!!unread && (
           <span className="absolute top-1 right-1 min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] leading-4 font-semibold text-white">
             {unread > MAX ? `${MAX}+` : unread}
@@ -98,7 +98,7 @@ export function NotificationBell() {
         )}
       </button>
       {open && (
-        <div role="dialog" aria-label="Notificaciones" className="absolute right-0 z-30 mt-2 w-[22rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-line bg-surface shadow-lg">
+        <div role="dialog" aria-label="Notificaciones" className="absolute right-0 z-30 mt-2 w-[22rem] max-w-[calc(100vw-1.5rem)] overflow-hidden glass-card-menu rounded-xl">
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
             <p className="text-sm font-semibold">Notificaciones</p>
             {!!unread && items && (

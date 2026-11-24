@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { avatarStyle } from "@/components/ui/styles";
 import { notFound } from "next/navigation";
 import { ArrowLeft, CalendarClock, MessageCircle } from "lucide-react";
 import { requireAccess } from "@/server/auth/guards";
@@ -29,7 +30,7 @@ export const metadata: Metadata = { title: "Cliente" };
 
 function Section({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-line bg-surface">
+    <section className="glass-card rounded-xl">
       <header className="flex items-center justify-between border-b border-line px-4 py-3">
         <h2 className="text-sm font-semibold">{title}</h2>
         {aside}
@@ -122,9 +123,9 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
         </p>
       )}
 
-      <header className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4 sm:p-5 lg:flex-row lg:items-start lg:justify-between">
+      <header className="flex flex-col gap-4 glass-card rounded-xl p-4 sm:p-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 gap-4">
-          <span className="grid size-12 shrink-0 place-items-center rounded-full bg-brand-100 text-lg font-semibold text-brand-800" aria-hidden>
+          <span className="grid size-12 shrink-0 place-items-center rounded-full text-lg font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]" style={avatarStyle(c.name)} aria-hidden>
             {c.name.slice(0, 1).toUpperCase()}
           </span>
           <div className="min-w-0">
@@ -170,7 +171,7 @@ export default async function CustomerPage({ params }: PageProps<"/clientes/[id]
 
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {kpis.map(([label, value]) => (
-          <div key={label} className="rounded-xl border border-line bg-surface px-4 py-3">
+          <div key={label} className="glass-card rounded-xl px-4 py-3">
             <dt className="text-xs text-ink-muted">{label}</dt>
             <dd className="mt-1 truncate text-lg font-semibold">{value}</dd>
           </div>

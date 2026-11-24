@@ -359,7 +359,7 @@ export function AutomationsManager({ automations, runs, lookups, canEdit, timezo
         </ul>
       )}
 
-      <section className="rounded-xl border border-line bg-surface">
+      <section className="glass-card rounded-xl">
         <h3 className="border-b border-line px-4 py-3 text-sm font-semibold">Últimas ejecuciones</h3>
         {runs.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-ink-muted">Sin ejecuciones todavía.</p>

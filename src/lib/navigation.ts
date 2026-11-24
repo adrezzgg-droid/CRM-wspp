@@ -19,10 +19,28 @@ export type NavIcon =
   | "shield"
   | "settings";
 
+/** Categorías del panel de inicio (mismo esquema que Impulse360). */
+export type NavGroupId = "principal" | "ventas" | "sistema";
+
+export interface NavGroup {
+  id: NavGroupId;
+  label: string;
+  description: string;
+}
+
+export const NAV_GROUPS: readonly NavGroup[] = [
+  { id: "principal", label: "Principal", description: "Tu día y los resultados del equipo" },
+  { id: "ventas", label: "Ventas", description: "Conversaciones, clientes, pipeline y pedidos" },
+  { id: "sistema", label: "Sistema", description: "Configuración de la empresa y auditoría" },
+];
+
 export interface NavItem {
   href: string;
   label: string;
   icon: NavIcon;
+  group: NavGroupId;
+  /** Texto corto de la tarjeta en el panel. */
+  description: string;
   /** null = cualquier usuario autenticado. */
   resource: Resource | null;
   /** Fase del plan en la que el módulo queda operativo. */
@@ -30,15 +48,15 @@ export interface NavItem {
 }
 
 export const MAIN_NAV: readonly NavItem[] = [
-  { href: "/mi-dia", label: "Mi día", icon: "sun", resource: "mi_dia", phase: 6 },
-  { href: "/dashboard", label: "Dashboard", icon: "chart", resource: "dashboard", phase: 8 },
-  { href: "/inbox", label: "Bandeja", icon: "inbox", resource: "inbox", phase: 3 },
-  { href: "/clientes", label: "Clientes", icon: "users", resource: "clientes", phase: 2 },
-  { href: "/pipeline", label: "Pipeline", icon: "kanban", resource: "pipeline", phase: 5 },
-  { href: "/pedidos", label: "Pedidos", icon: "package", resource: "pedidos", phase: 5 },
-  { href: "/productos", label: "Productos", icon: "boxes", resource: "productos", phase: 5 },
-  { href: "/tareas", label: "Tareas", icon: "check", resource: "tareas", phase: 6 },
-  { href: "/auditoria", label: "Auditoría", icon: "shield", resource: "auditoria", phase: 10 },
+  { href: "/mi-dia", label: "Mi día", icon: "sun", group: "principal", description: "Lo que tenés que hacer hoy", resource: "mi_dia", phase: 6 },
+  { href: "/dashboard", label: "Dashboard", icon: "chart", group: "principal", description: "Ventas, leads y rendimiento del equipo", resource: "dashboard", phase: 8 },
+  { href: "/inbox", label: "Bandeja", icon: "inbox", group: "ventas", description: "Conversaciones de WhatsApp en tiempo real", resource: "inbox", phase: 3 },
+  { href: "/clientes", label: "Clientes", icon: "users", group: "ventas", description: "Fichas, contactos e historial", resource: "clientes", phase: 2 },
+  { href: "/pipeline", label: "Pipeline", icon: "kanban", group: "ventas", description: "Oportunidades por etapa", resource: "pipeline", phase: 5 },
+  { href: "/pedidos", label: "Pedidos", icon: "package", group: "ventas", description: "Pedidos y entregas", resource: "pedidos", phase: 5 },
+  { href: "/productos", label: "Productos", icon: "boxes", group: "ventas", description: "Catálogo y precios", resource: "productos", phase: 5 },
+  { href: "/tareas", label: "Tareas", icon: "check", group: "ventas", description: "Llamadas, visitas y seguimientos", resource: "tareas", phase: 6 },
+  { href: "/auditoria", label: "Auditoría", icon: "shield", group: "sistema", description: "Registro de seguridad y de cambios", resource: "auditoria", phase: 10 },
 ];
 
 export interface ConfigSection {
@@ -69,6 +87,8 @@ export const CONFIG_NAV: NavItem = {
   href: "/configuracion",
   label: "Configuración",
   icon: "settings",
+  group: "sistema",
+  description: "Empresa, usuarios, WhatsApp e integraciones",
   resource: null,
   phase: 1,
 };
@@ -87,13 +107,13 @@ export function mainNavFor(role: Role, overrides?: PolicyOverrides): NavItem[] {
   return items;
 }
 
-/** Pantalla de inicio: el vendedor y el repartidor arrancan en "Mi día". */
-export function landingFor(role: Role, overrides?: PolicyOverrides): string {
-  const visible = mainNavFor(role, overrides);
-  const prefersDay = role === "vendedor" || role === "repartidor";
-  const preferred = prefersDay ? "/mi-dia" : "/dashboard";
-  return visible.find((i) => i.href === preferred)?.href ?? visible[0]?.href ?? "/sin-acceso";
+/** Categorías con las secciones que el rol puede ver (las vacías no se muestran). */
+export function navGroupsFor(role: Role, overrides?: PolicyOverrides): (NavGroup & { items: NavItem[] })[] {
+  const items = mainNavFor(role, overrides);
+  return NAV_GROUPS.map((g) => ({ ...g, items: items.filter((i) => i.group === g.id) })).filter((g) => g.items.length > 0);
 }
 
-/** Cookie (no sensible) con la preferencia de menú colapsado. */
-export const SIDEBAR_COOKIE = "sidebar-collapsed";
+/** Pantalla de inicio: el panel de categorías (como Impulse360), si el rol ve algo. */
+export function landingFor(role: Role, overrides?: PolicyOverrides): string {
+  return mainNavFor(role, overrides).length > 0 ? "/" : "/sin-acceso";
+}

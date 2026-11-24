@@ -92,7 +92,7 @@ export function WhatsappSettings({ initial }: { initial: WhatsappSettingsView })
       {message && <Alert tone={message.tone}>{message.text}</Alert>}
 
       {/* Estado */}
-      <section className="rounded-xl border border-line bg-surface p-4">
+      <section className="glass-card rounded-xl p-4">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="mr-auto text-sm font-semibold">{a?.displayPhone && connected ? a.displayPhone : "Número de WhatsApp"}</h3>
           <Badge tone={CONNECTION[a?.connectionStatus ?? "sin_configurar"].tone}>{CONNECTION[a?.connectionStatus ?? "sin_configurar"].label}</Badge>
@@ -151,7 +151,7 @@ export function WhatsappSettings({ initial }: { initial: WhatsappSettingsView })
       {/* Datos de la cuenta */}
       {!readOnly && (
         <form
-          className="space-y-4 rounded-xl border border-line bg-surface p-4"
+          className="space-y-4 glass-card rounded-xl p-4"
           noValidate
           onSubmit={(e) => {
             e.preventDefault();
@@ -202,7 +202,7 @@ export function WhatsappSettings({ initial }: { initial: WhatsappSettingsView })
       )}
 
       {/* Webhook */}
-      <section className="space-y-4 rounded-xl border border-line bg-surface p-4">
+      <section className="space-y-4 glass-card rounded-xl p-4">
         <div>
           <h3 className="text-sm font-semibold">Webhook (para recibir mensajes)</h3>
           <p className="mt-1 text-sm text-ink-muted">
@@ -218,7 +218,7 @@ export function WhatsappSettings({ initial }: { initial: WhatsappSettingsView })
         )}
       </section>
 
-      <details className="rounded-xl border border-line bg-surface p-4 text-sm">
+      <details className="glass-card rounded-xl p-4 text-sm">
         <summary className="cursor-pointer font-medium">Cómo conseguir estos datos</summary>
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-ink-muted">
           <li>En business.facebook.com, verificá tu empresa (sin eso Meta limita los envíos).</li>

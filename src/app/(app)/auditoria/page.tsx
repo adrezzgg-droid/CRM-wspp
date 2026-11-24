@@ -99,7 +99,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/auditoria"
           No hay registros con esos filtros.
         </div>
       ) : (
-        <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
+        <ul className="divide-y divide-line glass-card rounded-xl">
           {page.items.map((a) => {
             const changes = auditChanges(a.before, a.after);
             return (

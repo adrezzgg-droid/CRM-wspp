@@ -114,7 +114,7 @@ export function ZonesManager({ zones, sellers, names, canEdit }: { zones: ZoneRo
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {zones.map((z) => (
-            <li key={z.id} className="rounded-xl border border-line bg-surface p-4">
+            <li key={z.id} className="glass-card rounded-xl p-4">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <h3 className="font-medium">{z.name}</h3>

@@ -9,6 +9,7 @@ import {
   configSectionsFor,
   landingFor,
   mainNavFor,
+  navGroupsFor,
 } from "./navigation.ts";
 
 const APP_DIR = join(import.meta.dirname, "..", "app", "(app)");
@@ -52,12 +53,18 @@ test("repartidor: solo su día, pedidos, tareas y sus notificaciones", () => {
   assert.deepEqual(configSectionsFor("repartidor").map((s) => s.slug), ["notificaciones"]);
 });
 
-test("pantalla de inicio por rol", () => {
-  assert.equal(landingFor("admin"), "/dashboard");
-  assert.equal(landingFor("supervisor"), "/dashboard");
-  assert.equal(landingFor("solo_lectura"), "/dashboard");
-  assert.equal(landingFor("vendedor"), "/mi-dia");
-  assert.equal(landingFor("repartidor"), "/mi-dia");
+test("todos arrancan en el panel de categorías", () => {
+  for (const role of ROLES) assert.equal(landingFor(role), "/", role);
+});
+
+test("categorías del panel: cada sección en la suya, sin categorías vacías", () => {
+  assert.deepEqual(navGroupsFor("admin").map((g) => [g.id, g.items.length]), [["principal", 2], ["ventas", 6], ["sistema", 2]]);
+  assert.deepEqual(navGroupsFor("repartidor").map((g) => [g.id, g.items.map((i) => i.href)]), [
+    ["principal", ["/mi-dia"]],
+    ["ventas", ["/pedidos", "/tareas"]],
+    ["sistema", ["/configuracion"]],
+  ]);
+  for (const item of MAIN_NAV) assert.ok(item.description, item.href);
 });
 
 test("los overrides de la organización cambian el menú", () => {

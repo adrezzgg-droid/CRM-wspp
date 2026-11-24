@@ -118,7 +118,7 @@ export function TagsManager({ tags, canCreate, canEdit, canDelete }: { tags: Tag
           Todavía no hay etiquetas.
         </div>
       ) : (
-        <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+        <ul className="divide-y divide-line overflow-hidden glass-card rounded-xl">
           {tags.map((t) => (
             <li key={t.id} className="flex items-center gap-3 px-4 py-2.5">
               <span className="flex-1">
