@@ -77,7 +77,7 @@ export function ConversationList({
               type="button"
               aria-selected={filter === f.id}
               onClick={() => onFilter(f.id)}
-              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap transition ${filter === f.id ? "bg-brand-600 text-white" : "bg-canvas text-ink-muted hover:text-ink"}`}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap transition ${filter === f.id ? "bg-brand-600 text-on-brand" : "bg-canvas text-ink-muted hover:text-ink"}`}
             >
               {f.label}
             </button>
@@ -125,7 +125,7 @@ export function ConversationList({
                           {c.lastMessagePreview ?? ""}
                         </span>
                         {c.unreadCount > 0 && (
-                          <span className="min-w-5 shrink-0 rounded-full bg-brand-600 px-1.5 text-center text-[11px] leading-5 font-semibold text-white" aria-label={`${c.unreadCount} sin leer`}>
+                          <span className="min-w-5 shrink-0 rounded-full bg-brand-600 px-1.5 text-center text-[11px] leading-5 font-semibold text-on-brand" aria-label={`${c.unreadCount} sin leer`}>
                             {c.unreadCount > 99 ? "99+" : c.unreadCount}
                           </span>
                         )}

@@ -113,7 +113,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/client
           ))}
         </select>
         <div className="flex items-center gap-2">
-          <button type="submit" className="flex-1 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          <button type="submit" className="flex-1 rounded-lg btn-primario px-3 py-2 text-sm">
             Filtrar
           </button>
           {hasFilters && (

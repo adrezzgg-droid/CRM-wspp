@@ -27,7 +27,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
           <input type="checkbox" name="inactivos" value="1" defaultChecked={!!filters.inactivos} className="size-4 accent-brand-600" />
           Incluir inactivos
         </label>
-        <button type="submit" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        <button type="submit" className="rounded-lg btn-primario px-3 py-2 text-sm">
           Filtrar
         </button>
         {(filters.q || filters.inactivos) && (

@@ -98,7 +98,7 @@ export function NotificationBell() {
         )}
       </button>
       {open && (
-        <div role="dialog" aria-label="Notificaciones" className="absolute right-0 z-30 mt-2 w-[22rem] max-w-[calc(100vw-1.5rem)] overflow-hidden glass-card-menu rounded-xl">
+        <div role="dialog" aria-label="Notificaciones" className="absolute right-0 z-30 mt-2 w-[22rem] max-w-[calc(100vw-1.5rem)] overflow-hidden glass-card-menu rounded-xl text-ink">
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
             <p className="text-sm font-semibold">Notificaciones</p>
             {!!unread && items && (

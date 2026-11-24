@@ -85,7 +85,7 @@ export function RolesEditor({ overrides, readOnly }: { overrides: PolicyOverride
             type="button"
             aria-selected={role === r}
             onClick={() => setRole(r)}
-            className={`shrink-0 rounded-lg px-3 py-1.5 text-sm whitespace-nowrap ${role === r ? "bg-brand-600 font-medium text-white" : "bg-surface text-ink-muted hover:text-ink"}`}
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-sm whitespace-nowrap ${role === r ? "bg-brand-600 font-medium text-on-brand" : "bg-surface text-ink-muted hover:text-ink"}`}
           >
             {ROLE_LABELS[r]}
           </button>

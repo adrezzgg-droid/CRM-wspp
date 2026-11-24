@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, ChevronRight, FlaskConical, LayoutGrid } from "lucide-react";
 import type { NavGroup, NavItem } from "@/lib/navigation";
+import type { Theme } from "@/lib/theme";
 import { NAV_ICONS } from "./nav-icons";
 import { NotificationBell } from "./notification-bell";
 import { UserMenu } from "./user-menu";
@@ -33,11 +34,13 @@ export function AppShell({
   groups,
   user,
   org,
+  theme,
   children,
 }: {
   groups: (NavGroup & { items: NavItem[] })[];
   user: ShellUser;
   org: ShellOrg;
+  theme: Theme;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -74,7 +77,7 @@ export function AppShell({
 
       <header className="glass-card-dark relative z-40 flex min-h-14 shrink-0 items-center gap-2 rounded-none border-x-0 border-t-0 !bg-[rgba(11,15,25,0.92)] px-3 py-2 text-[#F0EEE6] md:gap-3 md:px-6">
         <Link href="/" className="flex min-w-0 shrink-0 items-center gap-2" title="Ir al panel">
-          <span className="grid size-8 shrink-0 place-items-center rounded bg-gradient-to-br from-brand-600 to-brand-700 text-sm font-black text-white">
+          <span className="grid size-8 shrink-0 place-items-center rounded bg-gradient-to-br from-[#4f46e5] to-[#4338ca] text-sm font-black text-white">
             {org.name.charAt(0).toUpperCase()}
           </span>
           <span className="hidden truncate text-[15px] font-bold tracking-[0.03em] uppercase sm:block">{org.name}</span>
@@ -142,7 +145,7 @@ export function AppShell({
         )}
 
         <NotificationBell />
-        <UserMenu user={user} />
+        <UserMenu user={user} theme={theme} />
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>

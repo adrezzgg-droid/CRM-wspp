@@ -47,6 +47,9 @@
   --color-viz-axis: #cbd5e1;
   --color-delta-up: #006300;
   --color-delta-down: #c22f2f;
+
+  /* Texto sobre relleno de marca: blanco en claro, casi negro en oscuro (como Impulse360). */
+  --color-on-brand: #ffffff;
 }
 
 html,
@@ -91,7 +94,7 @@ body {
   }
   /* Vidrio más opaco para menús con mucho texto. */
   .glass-card-menu {
-    background: rgba(255, 255, 255, 0.88);
+    background: rgba(255, 255, 255, 0.94);
     -webkit-backdrop-filter: blur(24px) saturate(180%);
     backdrop-filter: blur(24px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.7);
@@ -137,13 +140,169 @@ body {
 
   /* Barras de desplazamiento finas. */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
-  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::placeholder { color: #94a3b8; }
+  ::placeholder { color: var(--placeholder); }
 }
 
 :focus-visible {
   outline: 2px solid var(--color-brand-500);
   outline-offset: 2px;
+}
+
+/*
+ * Modo oscuro, igual que Impulse360 (TEMA_OSCURO en panitas-app/src/panitas.jsx).
+ * El tema elegido (claro / oscuro / sistema) viaja en la cookie "tema" y el
+ * layout raíz lo pone como clase en <html>, así no hay parpadeo al cargar.
+ * La variante `dark:` de Tailwind sigue esa clase (y al sistema en "sistema").
+ */
+@custom-variant dark {
+  &:where(.tema-oscuro, .tema-oscuro *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(.tema-sistema, .tema-sistema *) {
+      @slot;
+    }
+  }
+}
+
+:root {
+  --scroll-thumb: #cbd5e1;
+  --scroll-thumb-hover: #94a3b8;
+  --placeholder: #94a3b8;
+
+  /*
+   * En oscuro se invierten las escalas: los tonos claros (50–200) pasan a ser
+   * fondos tenues y los oscuros (600–900) textos claros. Así los badges,
+   * avisos y textos de color se ven bien sin tocar cada pantalla.
+   */
+  @variant dark {
+    color-scheme: dark;
+    --color-on-brand: #0b0f19;
+    --scroll-thumb: #2c3658;
+    --scroll-thumb-hover: #3d4a78;
+    --placeholder: #64748b;
+
+    --color-canvas: #0b0f19;
+    --color-surface: #1e2640;
+    --color-line: #2c3658;
+    --color-ink: #f1f5f9;
+    --color-ink-muted: #94a3b8;
+
+    --color-brand-50: #1d2150;
+    --color-brand-100: #25295a;
+    --color-brand-200: #343b7a;
+    --color-brand-300: #4f58b0;
+    --color-brand-400: #6366f1;
+    --color-brand-500: #818cf8;
+    --color-brand-600: #818cf8;
+    --color-brand-700: #a5b4fc;
+    --color-brand-800: #c7d2fe;
+    --color-brand-900: #e0e7ff;
+    --color-brand-950: #eef2ff;
+
+    --color-slate-50: #121830;
+    --color-slate-100: #151b32;
+    --color-slate-200: #2c3658;
+    --color-slate-300: #33406a;
+    --color-slate-500: #94a3b8;
+    --color-slate-600: #94a3b8;
+    --color-slate-700: #cbd5e1;
+
+    --color-red-50: #3d1b22;
+    --color-red-100: #3d1b22;
+    --color-red-200: #6b2a35;
+    --color-red-400: #f87171;
+    --color-red-600: #ef4444;
+    --color-red-700: #f87171;
+    --color-red-800: #fca5a5;
+
+    --color-amber-50: #2e250b;
+    --color-amber-100: #3b2f0b;
+    --color-amber-200: #5c4a14;
+    --color-amber-700: #fbbf24;
+    --color-amber-800: #fcd34d;
+    --color-amber-900: #fde68a;
+
+    --color-green-50: #0f3323;
+    --color-green-100: #0f3323;
+    --color-green-200: #1d5a3a;
+    --color-green-700: #4ade80;
+    --color-green-800: #86efac;
+    --color-green-900: #bbf7d0;
+
+    --color-sky-50: #0b3441;
+    --color-sky-100: #0b3441;
+    --color-sky-200: #155e75;
+    --color-sky-700: #22d3ee;
+    --color-sky-800: #67e8f9;
+
+    --color-cyan-100: #0b3441;
+    --color-cyan-700: #22d3ee;
+
+    --color-violet-50: #25295a;
+    --color-violet-200: #3d3f8a;
+    --color-violet-700: #a5b4fc;
+
+    --color-series-1: #6366f1;
+    --color-viz-grid: #2c3658;
+    --color-viz-axis: #3d4a78;
+    --color-delta-up: #4ade80;
+    --color-delta-down: #f87171;
+  }
+}
+
+body {
+  @variant dark {
+    background-image:
+      radial-gradient(1100px 640px at 88% -10%, rgba(129, 140, 248, 0.38), transparent 60%),
+      radial-gradient(900px 620px at -10% 12%, rgba(34, 211, 238, 0.24), transparent 58%),
+      radial-gradient(1000px 700px at 50% 118%, rgba(236, 72, 153, 0.16), transparent 60%);
+  }
+}
+
+@layer components {
+  .glass-card {
+    @variant dark {
+      background: rgba(30, 41, 59, 0.3);
+      border-color: rgba(255, 255, 255, 0.12);
+      box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+  }
+  a.glass-card:hover,
+  button.glass-card:hover {
+    @variant dark {
+      background: rgba(30, 41, 59, 0.45);
+      box-shadow: 0 10px 36px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    }
+  }
+  .glass-card-menu {
+    @variant dark {
+      background: rgba(30, 36, 64, 0.95);
+      border-color: rgba(255, 255, 255, 0.12);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    }
+  }
+  .btn-primario {
+    @variant dark {
+      color: #0b0f19;
+      background-image: linear-gradient(135deg, #818cf8 0%, #7c8cf5 55%, #22d3ee 180%);
+      box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.28), 0 0 16px rgba(34, 211, 238, 0.26);
+    }
+  }
+  .btn-primario:hover:not(:disabled) {
+    @variant dark {
+      box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.55), 0 0 26px rgba(34, 211, 238, 0.5);
+    }
+  }
+}
+
+@layer base {
+  tbody tr:hover {
+    @variant dark {
+      background-color: rgba(129, 140, 248, 0.06);
+    }
+  }
 }

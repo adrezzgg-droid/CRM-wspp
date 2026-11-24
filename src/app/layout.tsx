@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
+import { cookies } from "next/headers";
+import { colorScheme, parseTheme, themeClass, THEME_COOKIE } from "@/lib/theme";
 import { Geist_Mono, Nunito } from "next/font/google";
 import "./globals.css";
 
@@ -16,15 +18,20 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#4f46e5",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#4f46e5" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0f19" },
+  ],
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   // Todo se renderiza por pedido: así Next aplica el nonce de la CSP (src/proxy.ts)
   // a sus scripts. Las páginas ya dependían de la sesión, así que no cambia el costo.
   await connection();
+  // Tema elegido en el menú de usuario (cookie): la página llega ya pintada, sin parpadeo.
+  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value);
   return (
-    <html lang="es-AR" className={`${nunito.variable} ${geistMono.variable} h-full`}>
+    <html lang="es-AR" className={`${nunito.variable} ${geistMono.variable} ${themeClass(theme)} h-full`} style={{ colorScheme: colorScheme(theme) }}>
       <body className="h-full font-sans">{children}</body>
     </html>
   );

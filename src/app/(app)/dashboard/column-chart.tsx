@@ -109,7 +109,7 @@ export function ColumnChart({
             </div>
             {current && (
               <div
-                className="pointer-events-none absolute -top-2 z-10 -translate-y-full rounded-lg bg-ink px-2.5 py-1.5 text-xs whitespace-nowrap text-white shadow-lg"
+                className="pointer-events-none absolute -top-2 z-10 -translate-y-full rounded-lg bg-ink px-2.5 py-1.5 text-xs whitespace-nowrap text-surface shadow-lg"
                 style={
                   active! < data.length / 2
                     ? { left: `${(active! / data.length) * 100}%` }
@@ -117,7 +117,7 @@ export function ColumnChart({
                 }
               >
                 <p className="text-sm font-semibold">{format(current.value)}</p>
-                <p className="text-white/75">
+                <p className="text-surface/75">
                   {current.label}
                   {current.detail ? ` · ${current.detail}` : ""}
                 </p>

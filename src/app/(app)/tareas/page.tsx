@@ -57,7 +57,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/tareas">) 
                 role="tab"
                 aria-selected={active}
                 href={href(v)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm whitespace-nowrap ${active ? "bg-brand-600 font-medium text-white" : "bg-surface text-ink-muted hover:text-ink"}`}
+                className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm whitespace-nowrap ${active ? "bg-brand-600 font-medium text-on-brand" : "bg-surface text-ink-muted hover:text-ink"}`}
               >
                 {TASK_VIEW_LABELS[v]}
                 {count !== null && count > 0 && (
@@ -78,7 +78,7 @@ export default async function TasksPage({ searchParams }: PageProps<"/tareas">) 
                 </option>
               ))}
             </select>
-            <button type="submit" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            <button type="submit" className="rounded-lg btn-primario px-3 py-2 text-sm">
               Filtrar
             </button>
           </form>

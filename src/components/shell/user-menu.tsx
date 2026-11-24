@@ -3,11 +3,23 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
-import { LogOut } from "lucide-react";
+import { LogOut, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { api, errorMessage } from "@/lib/api-client";
 import { firebaseClient } from "@/lib/firebase/client";
 import type { ShellUser } from "./app-shell";
 import { avatarStyle } from "@/components/ui/styles";
+import { colorScheme, THEME_COOKIE, THEME_LABELS, THEMES, themeClass, type Theme } from "@/lib/theme";
+
+const THEME_ICONS: Record<Theme, LucideIcon> = { claro: Sun, oscuro: Moon, sistema: Monitor };
+
+/** Cambia el tema al instante (clase de <html>) y lo recuerda un año en la cookie. */
+function applyTheme(theme: Theme) {
+  const html = document.documentElement;
+  for (const t of THEMES) html.classList.remove(themeClass(t));
+  html.classList.add(themeClass(theme));
+  html.style.colorScheme = colorScheme(theme);
+  document.cookie = `${THEME_COOKIE}=${theme}; path=/; max-age=31536000; samesite=lax${location.protocol === "https:" ? "; secure" : ""}`;
+}
 
 function initials(name: string): string {
   return name
@@ -18,9 +30,10 @@ function initials(name: string): string {
     .join("");
 }
 
-export function UserMenu({ user }: { user: ShellUser }) {
+export function UserMenu({ user, theme: initialTheme }: { user: ShellUser; theme: Theme }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   const [busy, setBusy] = useState(false);
   const [availability, setAvailability] = useState<{ saving: boolean; error: string | null }>({ saving: false, error: null });
 
@@ -84,7 +97,7 @@ export function UserMenu({ user }: { user: ShellUser }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-30 mt-2 w-64 overflow-hidden glass-card-menu rounded-xl"
+          className="absolute right-0 z-30 mt-2 w-64 overflow-hidden glass-card-menu rounded-xl text-ink"
         >
           <div className="border-b border-line px-4 py-3">
             <p className="truncate text-sm font-medium">{user.displayName}</p>
@@ -110,6 +123,31 @@ export function UserMenu({ user }: { user: ShellUser }) {
               {availability.error && <p className="mt-1 text-xs text-red-600">{availability.error}</p>}
             </div>
           )}
+          <div className="border-b border-line px-4 py-3">
+            <p className="mb-2 text-xs font-bold tracking-wider text-ink-muted uppercase">Tema</p>
+            <div role="radiogroup" aria-label="Tema" className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
+              {THEMES.map((t) => {
+                const Icon = THEME_ICONS[t];
+                const active = t === theme;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => {
+                      setTheme(t);
+                      applyTheme(t);
+                    }}
+                    className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold ${active ? "bg-surface text-brand-600 shadow-sm" : "text-ink-muted hover:text-ink"}`}
+                  >
+                    <Icon className="size-3.5" aria-hidden />
+                    {THEME_LABELS[t]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <button
             type="button"
             role="menuitem"

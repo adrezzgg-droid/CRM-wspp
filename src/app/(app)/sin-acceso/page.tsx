@@ -22,7 +22,7 @@ export default async function NoAccessPage() {
         {home !== "/sin-acceso" && (
           <Link
             href={home}
-            className="mt-6 inline-block rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+            className="mt-6 inline-block rounded-lg btn-primario px-4 py-2 text-sm"
           >
             Volver al inicio
           </Link>

@@ -87,7 +87,7 @@ export function DashboardFrame({
               <span className="mb-1 block text-xs font-medium text-ink-muted">Hasta</span>
               <input type="date" required value={custom.hasta} min={custom.desde || undefined} onChange={(e) => setCustom((c) => ({ ...c, hasta: e.target.value }))} className={inputClass} />
             </label>
-            <button type="submit" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            <button type="submit" className="rounded-lg btn-primario px-3 py-2 text-sm">
               Aplicar
             </button>
           </form>

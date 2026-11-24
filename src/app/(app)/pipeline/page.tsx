@@ -53,7 +53,7 @@ export default async function PipelinePage({ searchParams }: PageProps<"/pipelin
             ))}
           </select>
         )}
-        <button type="submit" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        <button type="submit" className="rounded-lg btn-primario px-3 py-2 text-sm">
           Filtrar
         </button>
         {(q || owner) && (

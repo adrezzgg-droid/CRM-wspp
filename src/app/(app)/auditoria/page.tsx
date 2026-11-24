@@ -81,7 +81,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/auditoria"
           <span className="mb-1 block text-xs font-medium text-ink-muted">Hasta</span>
           <input type="date" name="hasta" defaultValue={filters.hasta ?? ""} className={inputClass} />
         </label>
-        <button type="submit" className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        <button type="submit" className="rounded-lg btn-primario px-3.5 py-2 text-sm">
           Filtrar
         </button>
         {[...params.keys()].length > 0 && (

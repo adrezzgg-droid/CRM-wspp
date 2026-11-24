@@ -256,7 +256,7 @@ function Composer({
           type="button"
           onClick={send}
           disabled={busy || blocked || (!text.trim() && !file)}
-          className={`rounded-xl p-2.5 text-white disabled:opacity-50 ${note ? "bg-amber-600 hover:bg-amber-700" : "bg-brand-600 hover:bg-brand-700"}`}
+          className={`rounded-xl p-2.5 text-on-brand disabled:opacity-50 ${note ? "bg-amber-600 hover:bg-amber-700" : "bg-brand-600 hover:bg-brand-700"}`}
           aria-label={note ? "Guardar nota" : "Enviar"}
         >
           <Send className="size-5" aria-hidden />

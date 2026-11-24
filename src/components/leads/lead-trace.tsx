@@ -47,7 +47,7 @@ export function LeadTrace({ lead, timezone, canEdit, compact = false }: { lead: 
           return (
             <li key={s} className="flex items-center gap-2 text-xs">
               <span
-                className={`grid size-5 shrink-0 place-items-center rounded-full border ${done ? "border-brand-600 bg-brand-600 text-white" : at ? "border-brand-300 bg-brand-50 text-brand-700" : "border-line text-ink-muted"}`}
+                className={`grid size-5 shrink-0 place-items-center rounded-full border ${done ? "border-brand-600 bg-brand-600 text-on-brand" : at ? "border-brand-300 bg-brand-50 text-brand-700" : "border-line text-ink-muted"}`}
                 aria-hidden
               >
                 {done || at ? <Check className="size-3" /> : <span className="size-1.5 rounded-full bg-line" />}

@@ -8,7 +8,7 @@ export default function NotFound() {
         <h1 className="mt-1 text-lg font-semibold">No encontramos esta página</h1>
         <Link
           href="/"
-          className="mt-6 inline-block rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+          className="mt-6 inline-block rounded-lg btn-primario px-4 py-2 text-sm"
         >
           Ir al inicio
         </Link>

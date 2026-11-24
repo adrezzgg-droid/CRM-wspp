@@ -53,7 +53,7 @@ export function InfoTip({ text }: { text: string }) {
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none absolute inset-x-2 top-9 z-20 hidden rounded-lg bg-ink px-3 py-2 text-xs leading-snug font-normal text-white shadow-lg peer-hover:block peer-focus-visible:block"
+        className="pointer-events-none absolute inset-x-2 top-9 z-20 hidden rounded-lg bg-ink px-3 py-2 text-xs leading-snug font-normal text-surface shadow-lg peer-hover:block peer-focus-visible:block"
       >
         {text}
       </span>
