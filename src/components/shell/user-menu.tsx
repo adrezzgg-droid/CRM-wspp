@@ -3,23 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "firebase/auth";
-import { LogOut, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { api, errorMessage } from "@/lib/api-client";
 import { firebaseClient } from "@/lib/firebase/client";
 import type { ShellUser } from "./app-shell";
 import { avatarStyle } from "@/components/ui/styles";
-import { colorScheme, THEME_COOKIE, THEME_LABELS, THEMES, themeClass, type Theme } from "@/lib/theme";
-
-const THEME_ICONS: Record<Theme, LucideIcon> = { claro: Sun, oscuro: Moon, sistema: Monitor };
-
-/** Cambia el tema al instante (clase de <html>) y lo recuerda un año en la cookie. */
-function applyTheme(theme: Theme) {
-  const html = document.documentElement;
-  for (const t of THEMES) html.classList.remove(themeClass(t));
-  html.classList.add(themeClass(theme));
-  html.style.colorScheme = colorScheme(theme);
-  document.cookie = `${THEME_COOKIE}=${theme}; path=/; max-age=31536000; samesite=lax${location.protocol === "https:" ? "; secure" : ""}`;
-}
+import { THEME_LABELS, THEMES, type Theme } from "@/lib/theme";
+import { THEME_ICONS } from "./theme-toggle";
 
 function initials(name: string): string {
   return name
@@ -30,10 +20,9 @@ function initials(name: string): string {
     .join("");
 }
 
-export function UserMenu({ user, theme: initialTheme }: { user: ShellUser; theme: Theme }) {
+export function UserMenu({ user, theme, onThemeChange }: { user: ShellUser; theme: Theme; onThemeChange: (t: Theme) => void }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(initialTheme);
   const [busy, setBusy] = useState(false);
   const [availability, setAvailability] = useState<{ saving: boolean; error: string | null }>({ saving: false, error: null });
 
@@ -135,10 +124,7 @@ export function UserMenu({ user, theme: initialTheme }: { user: ShellUser; theme
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => {
-                      setTheme(t);
-                      applyTheme(t);
-                    }}
+                    onClick={() => onThemeChange(t)}
                     className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold ${active ? "bg-surface text-brand-600 shadow-sm" : "text-ink-muted hover:text-ink"}`}
                   >
                     <Icon className="size-3.5" aria-hidden />

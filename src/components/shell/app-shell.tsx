@@ -9,6 +9,7 @@ import type { Theme } from "@/lib/theme";
 import { NAV_ICONS } from "./nav-icons";
 import { NotificationBell } from "./notification-bell";
 import { UserMenu } from "./user-menu";
+import { applyTheme, ThemeToggle } from "./theme-toggle";
 
 
 export interface ShellUser {
@@ -34,7 +35,7 @@ export function AppShell({
   groups,
   user,
   org,
-  theme,
+  theme: initialTheme,
   children,
 }: {
   groups: (NavGroup & { items: NavItem[] })[];
@@ -49,6 +50,12 @@ export function AppShell({
   const open = openAt === pathname;
   const setOpen = (v: boolean) => setOpenAt(v ? pathname : null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Tema compartido entre el botón de la barra y el selector del menú de usuario.
+  const [theme, setTheme] = useState<Theme>(initialTheme);
+  const changeTheme = (t: Theme) => {
+    setTheme(t);
+    applyTheme(t);
+  };
   const items = groups.flatMap((g) => g.items);
   const current = items.find((i) => pathname === i.href || pathname.startsWith(`${i.href}/`));
   const atHome = pathname === "/";
@@ -144,8 +151,9 @@ export function AppShell({
           </div>
         )}
 
+        <ThemeToggle theme={theme} onChange={changeTheme} />
         <NotificationBell />
-        <UserMenu user={user} theme={theme} />
+        <UserMenu user={user} theme={theme} onThemeChange={changeTheme} />
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>

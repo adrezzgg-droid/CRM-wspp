@@ -46,3 +46,6 @@ next-env.d.ts
 .firebase/
 .emulator-data/
 service-account*.json
+
+# notas locales (credenciales de prueba, etc.)
+*.local.md
